@@ -1,0 +1,7 @@
+timestamp_utc,alert_type,row_id,system,product,developer,old_rank,new_rank,old_position,new_position,old_nearest_order,new_nearest_order,details
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,b4a16812d59fbdc4,Position Gan_v.22 _ E-mini Nasdaq NQ,NQ,AutoTradingBot,,1,,Long 1 @ 25215.75,,Sell STP 1 @ 26172.25,System appeared in tracked top list.
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,63741ca1cd626891,FASSONERIA 3.0,NQ,KORIAL SYSTEMS,,2,,Long 1 @ 26366.50,,Sell STP 1 @ 26266.50,System appeared in tracked top list.
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,6b77d2cddd91a74a,FASSONERIA 4.0,NQ,KORIAL SYSTEMS,,3,,Long 1 @ 26366.50,,Sell STP 1 @ 26266.50,System appeared in tracked top list.
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,3515a5a61463c0d0,ALGOsigmaX E-mini S&P ES,ES,Victor Semenchuk,,4,,Long 1 @ 6807.50,,Sell STP 1 @ 6972.75,System appeared in tracked top list.
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,b698b9c1badd68c2,Ignis E-mini S&P 30',ES,0MG SYST3MS,,5,,Long 1 @ 7062,,Sell LMT 1 @ 7071.75,System appeared in tracked top list.
+2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,9b9110632d8be1d4,-,-,-,,10,,-,,-,System appeared in tracked top list.

@@ -57,8 +57,8 @@ MC_SIMS = int(os.getenv("MC_SIMS", "6000"))
 PERSISTENCE_DAYS = int(os.getenv("PERSISTENCE_DAYS", "3"))
 AGREEMENT_THRESHOLD = float(os.getenv("AGREEMENT_THRESHOLD", "0.75"))
 
-AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-DRY_RUN = os.getenv("DRY_RUN", "1").strip() == "1"
+AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+DRY_RUN = os.getenv("DRY_RUN", "0").strip() == "1"
 
 HISTORY_DIR = Path(os.getenv("HISTORY_DIR", "./history"))
 HISTORY_FILE = HISTORY_DIR / "regime_runs.csv"
@@ -67,11 +67,6 @@ MES_SYMBOL = os.getenv("MES_SYMBOL", "@MESM6")
 MNQ_SYMBOL = os.getenv("MNQ_SYMBOL", "@MNQM6")
 SUPPORTED_PRODUCTS = {"ES": MES_SYMBOL, "NQ": MNQ_SYMBOL}
 ETF_MAP = {"ES": "SPY", "NQ": "QQQ"}
-
-MES_STOP_POINTS = float(os.getenv("MES_STOP_POINTS", "80"))
-MES_TARGET_POINTS = float(os.getenv("MES_TARGET_POINTS", "160"))
-MNQ_STOP_POINTS = float(os.getenv("MNQ_STOP_POINTS", "180"))
-MNQ_TARGET_POINTS = float(os.getenv("MNQ_TARGET_POINTS", "900"))
 
 RISK_ON_SET = ["SPY", "QQQ", "IWM", "HYG"]
 RISK_OFF_SET = ["TLT", "GLD"]
@@ -154,7 +149,7 @@ class OpenPosition:
 # UTILS
 # ---------------------------------------------------------------------
 def color_for_signal(signal: str) -> str:
-    s = signal.lower()
+    s = str(signal).lower()
     if s == "bullish":
         return GREEN
     if s == "bearish":
@@ -176,7 +171,7 @@ def days_since(date_str: str) -> Optional[int]:
     if not date_str:
         return None
     try:
-        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        d = datetime.strptime(str(date_str), "%Y-%m-%d").date()
         return (date.today() - d).days
     except Exception:
         return None
@@ -189,6 +184,26 @@ def to_float_safe(v: Any) -> Optional[float]:
         return float(v)
     except Exception:
         return None
+
+
+def safe_pct(a: float, b: float) -> float:
+    if b is None or b == 0 or pd.isna(b):
+        return 0.0
+    return float(a) / float(b)
+
+
+def signal_from_score(score: float, bull: float = 0.15, bear: float = -0.15) -> str:
+    if score >= bull:
+        return "bullish"
+    if score <= bear:
+        return "bearish"
+    return "neutral"
+
+
+def rolling_zscore(s: pd.Series, window: int) -> pd.Series:
+    mu = s.rolling(window).mean()
+    sd = s.rolling(window).std(ddof=0).replace(0, np.nan)
+    return (s - mu) / sd
 
 
 # ---------------------------------------------------------------------
@@ -275,7 +290,7 @@ def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
 
 
 def parse_direction_and_size(text: str) -> Optional[ParsedPosition]:
-    text = text.strip()
+    text = str(text).strip()
     if text in {"", "--", "-", "Flat", "FLAT", "flat"}:
         return None
 
@@ -329,27 +344,18 @@ def extract_supported_open_positions(open_positions: dict) -> List[OpenPosition]
                 side=side,
                 qty=abs(int(qty)),
                 entry_price=to_float_safe(entry_price),
-                raw=p)
+                raw=p,
+            )
         )
 
     return extracted
 
 
-def get_bracket_distances_for_product(product: str) -> tuple[float, float]:
-    if product == "ES":
-        return MES_STOP_POINTS, MES_TARGET_POINTS
-    if product == "NQ":
-        return MNQ_STOP_POINTS, MNQ_TARGET_POINTS
-    raise ValueError(f"Unsupported product: {product}")
-
-
-def build_parent_order_with_bracket(
+def build_parent_order_market_only(
     strategy_id: int,
     full_symbol: str,
     side: str,
     qty: int,
-    stop_loss: float,
-    profit_target: float,
 ) -> dict:
     c2_side = "1" if side == "long" else "2"
     return {
@@ -359,12 +365,10 @@ def build_parent_order_with_bracket(
             "Side": c2_side,
             "OrderQuantity": int(qty),
             "TIF": "0",
-            "StopLoss": float(stop_loss),
-            "ProfitTarget": float(profit_target),
             "C2Symbol": {
                 "FullSymbol": full_symbol,
-                "SymbolType": "future"
-            }
+                "SymbolType": "future",
+            },
         }
     }
 
@@ -381,8 +385,8 @@ def build_close_order(strategy_id: int, open_pos: OpenPosition) -> dict:
             "TIF": "0",
             "C2Symbol": {
                 "FullSymbol": open_pos.symbol,
-                "SymbolType": "future"
-            }
+                "SymbolType": "future",
+            },
         }
     }
 
@@ -395,13 +399,35 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0] for c in df.columns]
+        try:
+            if "Open" in df.columns.get_level_values(0):
+                df.columns = [c[0] for c in df.columns]
+            else:
+                df.columns = [c[-1] for c in df.columns]
+        except Exception:
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+
+    rename_map = {}
+    for c in df.columns:
+        lc = str(c).lower()
+        if lc == "open":
+            rename_map[c] = "Open"
+        elif lc == "high":
+            rename_map[c] = "High"
+        elif lc == "low":
+            rename_map[c] = "Low"
+        elif lc == "close":
+            rename_map[c] = "Close"
+        elif lc == "volume":
+            rename_map[c] = "Volume"
+    df = df.rename(columns=rename_map)
 
     required = ["Open", "High", "Low", "Close", "Volume"]
     if not all(col in df.columns for col in required):
         return pd.DataFrame()
 
     out = df[required].copy().dropna()
+    out = out[~out.index.duplicated(keep="last")]
     return out
 
 
@@ -460,516 +486,542 @@ def download_market_data(ticker: str, years: int = LOOKBACK_YEARS) -> pd.DataFra
 # FEATURE ENGINEERING
 # ---------------------------------------------------------------------
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.copy()
-    d["ret_1d"] = d["Close"].pct_change()
-    d["ret_5d"] = d["Close"].pct_change(5)
-    d["ret_21d"] = d["Close"].pct_change(21)
-    d["ret_63d"] = d["Close"].pct_change(63)
-    d["ret_126d"] = d["Close"].pct_change(126)
+    x = df.copy()
+    close = x["Close"]
+    high = x["High"]
+    low = x["Low"]
+    volume = x["Volume"]
 
-    d["sma_20"] = d["Close"].rolling(20).mean()
-    d["sma_50"] = d["Close"].rolling(50).mean()
-    d["sma_100"] = d["Close"].rolling(100).mean()
-    d["sma_200"] = d["Close"].rolling(200).mean()
+    ret1 = close.pct_change()
+    ret5 = close.pct_change(5)
+    ret21 = close.pct_change(21)
+    ret63 = close.pct_change(63)
+    ret126 = close.pct_change(126)
 
-    d["ema_12"] = d["Close"].ewm(span=12, adjust=False).mean()
-    d["ema_26"] = d["Close"].ewm(span=26, adjust=False).mean()
-    d["macd"] = d["ema_12"] - d["ema_26"]
-    d["macd_signal"] = d["macd"].ewm(span=9, adjust=False).mean()
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    sma200 = close.rolling(200).mean()
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    macd_sig = macd.ewm(span=9, adjust=False).mean()
 
-    d["dist_sma50"] = d["Close"] / d["sma_50"] - 1
-    d["dist_sma200"] = d["Close"] / d["sma_200"] - 1
-    d["sma50_sma200"] = d["sma_50"] / d["sma_200"] - 1
-
-    delta = d["Close"].diff()
+    delta = close.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
     rs = gain / loss.replace(0, np.nan)
-    d["rsi_14"] = 100 - (100 / (1 + rs))
+    rsi14 = 100 - 100 / (1 + rs)
 
     tr = pd.concat(
         [
-            d["High"] - d["Low"],
-            (d["High"] - d["Close"].shift()).abs(),
-            (d["Low"] - d["Close"].shift()).abs(),
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low - close.shift(1)).abs(),
         ],
         axis=1,
     ).max(axis=1)
-    d["atr_14"] = tr.rolling(14).mean()
+    atr14 = tr.rolling(14).mean()
 
-    d["vol_21"] = d["ret_1d"].rolling(21).std() * np.sqrt(252)
-    d["vol_63"] = d["ret_1d"].rolling(63).std() * np.sqrt(252)
+    vol21 = ret1.rolling(21).std() * np.sqrt(252)
+    vol63 = ret1.rolling(63).std() * np.sqrt(252)
+    vol_z = rolling_zscore(vol21, 126)
+    price_z_20 = rolling_zscore(close, 20)
 
-    d["range_pct"] = (d["High"] - d["Low"]) / d["Close"]
-    d["volume_z"] = (d["Volume"] - d["Volume"].rolling(63).mean()) / d["Volume"].rolling(63).std()
-
-    d["target_21d_up"] = (d["Close"].shift(-21) / d["Close"] - 1 > 0).astype(int)
-    return d
+    out = pd.DataFrame(index=x.index)
+    out["Close"] = close
+    out["Open"] = x["Open"]
+    out["High"] = high
+    out["Low"] = low
+    out["Volume"] = volume
+    out["ret1"] = ret1
+    out["ret5"] = ret5
+    out["ret21"] = ret21
+    out["mom63"] = ret63
+    out["mom126"] = ret126
+    out["sma20"] = sma20
+    out["sma50"] = sma50
+    out["sma200"] = sma200
+    out["ema12"] = ema12
+    out["ema26"] = ema26
+    out["macd"] = macd
+    out["macd_sig"] = macd_sig
+    out["rsi14"] = rsi14
+    out["atr14"] = atr14
+    out["atr14_pct"] = atr14 / close
+    out["vol21annualized"] = vol21
+    out["vol63annualized"] = vol63
+    out["vol_z"] = vol_z
+    out["price_z20"] = price_z_20
+    out["dist_sma50"] = (close - sma50) / sma50
+    out["dist_sma200"] = (close - sma200) / sma200
+    out["future_21d"] = close.shift(-21) / close - 1.0
+    return out.dropna()
 
 
 # ---------------------------------------------------------------------
-# REGIME MODELS / SIGNALS
+# SIGNALS
 # ---------------------------------------------------------------------
-def classify_cluster_regime(cluster_df: pd.DataFrame, label_col: str) -> Dict[int, str]:
-    stats = cluster_df.groupby(label_col).agg(avg_ret63=("ret_63d", "mean"), avg_vol=("vol_21", "mean"))
-    regime_map: Dict[int, str] = {}
-    if stats.empty:
-        return regime_map
-    for idx, row in stats.iterrows():
-        if row["avg_ret63"] > 0 and row["avg_vol"] <= stats["avg_vol"].median():
-            regime_map[idx] = "bullish"
-        elif row["avg_ret63"] < 0 and row["avg_vol"] >= stats["avg_vol"].median():
-            regime_map[idx] = "bearish"
-        else:
-            regime_map[idx] = "neutral"
-    return regime_map
+def technical_signals(feat: pd.DataFrame) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    row = feat.iloc[-1]
+
+    trend_50200 = 1 if row["sma50"] > row["sma200"] else -1
+    add_analysis(results, "Trend 50/200", "bullish" if trend_50200 > 0 else "bearish",
+                 f"{row['sma50']:.2f}>{row['sma200']:.2f}" if trend_50200 > 0 else f"{row['sma50']:.2f}<{row['sma200']:.2f}",
+                 "Primary long-term trend filter")
+
+    pv200 = signal_from_score(row["dist_sma200"], 0.0, 0.0)
+    add_analysis(results, "Price vs SMA200", pv200, f"{row['dist_sma200']:.2%}", "Distance from 200-day average")
+
+    pv50 = signal_from_score(row["dist_sma50"], 0.0, 0.0)
+    add_analysis(results, "Price vs SMA50", pv50, f"{row['dist_sma50']:.2%}", "Distance from 50-day average")
+
+    mom = row["mom63"] + 0.5 * row["mom126"]
+    add_analysis(results, "63/126 Momentum", signal_from_score(mom, 0.03, -0.03), f"{mom:.2%}",
+                 "Intermediate-term momentum blend")
+
+    macd_state = row["macd"] - row["macd_sig"]
+    add_analysis(results, "MACD Regime", signal_from_score(macd_state, 0.0, 0.0), f"{macd_state:.4f}",
+                 "MACD minus signal line")
+
+    rsi_sig = "bullish" if row["rsi14"] >= 55 else "bearish" if row["rsi14"] <= 45 else "neutral"
+    add_analysis(results, "RSI Swing", rsi_sig, f"{row['rsi14']:.2f}", "RSI 14 swing zone")
+
+    add_analysis(results, "21-day Return", signal_from_score(row["ret21"], 0.01, -0.01), f"{row['ret21']:.2%}",
+                 "Recent 1-month return")
+
+    vol_adj = row["mom63"] / max(row["vol63annualized"], 1e-6)
+    add_analysis(results, "Vol-adjusted Momentum", signal_from_score(vol_adj, 0.10, -0.10), f"{vol_adj:.3f}",
+                 "Momentum normalized by realized vol")
+
+    return results
 
 
-def hmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    if not HMM_AVAILABLE:
-        return "neutral", "hmmlearn not installed", 0.0
-    feat = d[["ret_1d", "vol_21"]].replace([np.inf, -np.inf], np.nan).dropna().copy()
-    if len(feat) < 300:
-        return "neutral", "insufficient data", 0.0
-    scaler = StandardScaler()
-    X = scaler.fit_transform(feat.values)
-    model = GaussianHMM(n_components=3, covariance_type="full", n_iter=300, random_state=42)
-    model.fit(X)
-    states = model.predict(X)
-    tmp = feat.copy()
-    tmp["state"] = states
-    tmp["ret_63d"] = d.loc[tmp.index, "ret_63d"]
-    grp = tmp.groupby("state").agg(avg_ret=("ret_63d", "mean"), avg_vol=("vol_21", "mean"))
-    mapping = {}
-    for st, row in grp.iterrows():
-        if row["avg_ret"] > 0 and row["avg_vol"] <= grp["avg_vol"].median():
-            mapping[st] = "bullish"
-        elif row["avg_ret"] < 0 and row["avg_vol"] >= grp["avg_vol"].median():
-            mapping[st] = "bearish"
-        else:
-            mapping[st] = "neutral"
-    current_state = int(states[-1])
-    probs = model.predict_proba(X)
-    conf = float(np.max(probs[-1]))
-    return mapping.get(current_state, "neutral"), f"state={current_state}, conf={conf:.3f}", conf
-
-
-def markov_switch_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    if not MARKOV_AVAILABLE:
-        return "neutral", "statsmodels not installed", 0.0
-    series = d["ret_1d"].dropna()
-    if len(series) < 300:
-        return "neutral", "insufficient data", 0.0
+def hmm_regime_signal(feat: pd.DataFrame) -> Dict[str, Any]:
+    if not HMM_AVAILABLE or len(feat) < 300:
+        return {"analysis": "Gaussian HMM", "signal": "neutral", "value": "N/A", "note": "HMM unavailable or insufficient data"}
     try:
-        model = sm.tsa.MarkovRegression(series, k_regimes=2, trend="c", switching_variance=True)
-        res = model.fit(disp=False)
-        probs = res.filtered_marginal_probabilities
-        means = []
-        for regime in probs.columns:
-            w = probs[regime]
-            means.append((regime, float((w * series.loc[w.index]).sum() / w.sum())))
-        bull_regime = max(means, key=lambda x: x[1])[0]
-        bull_prob = float(probs[bull_regime].iloc[-1])
-        signal = "bullish" if bull_prob >= 0.55 else "bearish" if bull_prob <= 0.45 else "neutral"
-        conf = abs(bull_prob - 0.5) * 2
-        return signal, f"bull_prob={bull_prob:.3f}", conf
+        X = feat[["ret1", "vol21annualized", "dist_sma200"]].dropna().copy()
+        X = StandardScaler().fit_transform(X)
+        model = GaussianHMM(n_components=2, covariance_type="full", n_iter=200, random_state=42)
+        model.fit(X)
+        states = model.predict(X)
+        means = pd.DataFrame({"state": states, "ret": feat.dropna().iloc[-len(states):]["ret1"].values}).groupby("state")["ret"].mean()
+        bull_state = means.idxmax()
+        sig = "bullish" if states[-1] == bull_state else "bearish"
+        return {"analysis": "Gaussian HMM", "signal": sig, "value": int(states[-1]), "note": "2-state Gaussian HMM"}
     except Exception as e:
-        return "neutral", f"fit_failed={str(e)[:80]}", 0.0
+        return {"analysis": "Gaussian HMM", "signal": "neutral", "value": "ERR", "note": f"HMM error: {e}"}
 
 
-def gmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    cols = ["ret_21d", "ret_63d", "vol_21", "dist_sma200", "rsi_14"]
-    feat = d[cols].replace([np.inf, -np.inf], np.nan).dropna().copy()
-    if len(feat) < 250:
-        return "neutral", "insufficient data", 0.0
-    scaler = StandardScaler()
-    X = scaler.fit_transform(feat.values)
-    model = GaussianMixture(n_components=3, covariance_type="full", random_state=42)
-    model.fit(X)
-    labels = model.predict(X)
-    probs = model.predict_proba(X)
-    tmp = feat.copy()
-    tmp["label"] = labels
-    regime_map = classify_cluster_regime(tmp.assign(ret_63d=feat["ret_63d"], vol_21=feat["vol_21"]), "label")
-    cur = int(labels[-1])
-    return regime_map.get(cur, "neutral"), f"cluster={cur}, conf={np.max(probs[-1]):.3f}", float(np.max(probs[-1]))
+def markov_switch_signal(feat: pd.DataFrame) -> Dict[str, Any]:
+    if not MARKOV_AVAILABLE or len(feat) < 300:
+        return {"analysis": "Markov Switching", "signal": "neutral", "value": "N/A", "note": "Markov unavailable or insufficient data"}
+    try:
+        r = feat["ret1"].dropna() * 100.0
+        mod = sm.tsa.MarkovRegression(r, k_regimes=2, trend="c", switching_variance=True)
+        res = mod.fit(disp=False)
+        probs = res.smoothed_marginal_probabilities
+        means = []
+        for k in range(probs.shape[1]):
+            wk = probs.iloc[:, k]
+            means.append((wk * r.loc[wk.index]).sum() / max(wk.sum(), 1e-9))
+        bull_state = int(np.argmax(means))
+        last_state = int(probs.iloc[-1].idxmax())
+        sig = "bullish" if last_state == bull_state else "bearish"
+        return {"analysis": "Markov Switching", "signal": sig, "value": last_state, "note": "2-regime Markov regression"}
+    except Exception as e:
+        return {"analysis": "Markov Switching", "signal": "neutral", "value": "ERR", "note": f"Markov error: {e}"}
 
 
-def kmeans_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    cols = ["ret_21d", "ret_63d", "vol_21", "dist_sma50", "dist_sma200", "rsi_14"]
-    feat = d[cols].replace([np.inf, -np.inf], np.nan).dropna().copy()
-    if len(feat) < 250:
-        return "neutral", "insufficient data", 0.0
-    scaler = StandardScaler()
-    X = scaler.fit_transform(feat.values)
-    km = KMeans(n_clusters=3, n_init=20, random_state=42)
-    labels = km.fit_predict(X)
-    centers = km.cluster_centers_
-    cur_label = int(labels[-1])
-    cur_x = X[-1]
-    dist = np.linalg.norm(cur_x - centers[cur_label])
-    conf = float(1 / (1 + dist))
-    tmp = feat.copy()
-    tmp["label"] = labels
-    regime_map = classify_cluster_regime(tmp.assign(ret_63d=feat["ret_63d"], vol_21=feat["vol_21"]), "label")
-    return regime_map.get(cur_label, "neutral"), f"cluster={cur_label}, conf={conf:.3f}", conf
+def gmm_regime_signal(feat: pd.DataFrame) -> Dict[str, Any]:
+    try:
+        Xdf = feat[["ret21", "vol21annualized", "dist_sma200"]].dropna()
+        if len(Xdf) < 150:
+            return {"analysis": "Gaussian Mixture", "signal": "neutral", "value": "N/A", "note": "Insufficient data"}
+        X = StandardScaler().fit_transform(Xdf)
+        model = GaussianMixture(n_components=2, covariance_type="full", random_state=42)
+        model.fit(X)
+        states = model.predict(X)
+        tmp = Xdf.copy()
+        tmp["state"] = states
+        means = tmp.groupby("state")["ret21"].mean()
+        bull_state = means.idxmax()
+        sig = "bullish" if states[-1] == bull_state else "bearish"
+        return {"analysis": "Gaussian Mixture", "signal": sig, "value": int(states[-1]), "note": "2-cluster GMM"}
+    except Exception as e:
+        return {"analysis": "Gaussian Mixture", "signal": "neutral", "value": "ERR", "note": f"GMM error: {e}"}
 
 
-def logistic_21d_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    cols = ["ret_5d", "ret_21d", "ret_63d", "ret_126d", "dist_sma200", "sma50_sma200", "rsi_14", "macd", "macd_signal", "vol_21"]
-    x = d[cols].replace([np.inf, -np.inf], np.nan).dropna()
-    y = d.loc[x.index, "target_21d_up"]
-    if len(x) < 400:
-        return "neutral", "insufficient data", 0.0
-    split = int(len(x) * 0.8)
-    model = LogisticRegression(max_iter=2000)
-    model.fit(x.iloc[:split], y.iloc[:split])
-    prob = float(model.predict_proba(x.iloc[[-1]])[0, 1])
-    signal = "bullish" if prob >= 0.55 else "bearish" if prob <= 0.45 else "neutral"
-    conf = abs(prob - 0.5) * 2
-    return signal, f"p_up_21d={prob:.3f}", conf
+def kmeans_regime_signal(feat: pd.DataFrame) -> Dict[str, Any]:
+    try:
+        Xdf = feat[["ret21", "vol21annualized", "dist_sma200"]].dropna()
+        if len(Xdf) < 150:
+            return {"analysis": "KMeans Regime", "signal": "neutral", "value": "N/A", "note": "Insufficient data"}
+        X = StandardScaler().fit_transform(Xdf)
+        km = KMeans(n_clusters=2, random_state=42, n_init=20)
+        states = km.fit_predict(X)
+        tmp = Xdf.copy()
+        tmp["state"] = states
+        means = tmp.groupby("state")["ret21"].mean()
+        bull_state = means.idxmax()
+        sig = "bullish" if states[-1] == bull_state else "bearish"
+        return {"analysis": "KMeans Regime", "signal": sig, "value": int(states[-1]), "note": "2-cluster KMeans"}
+    except Exception as e:
+        return {"analysis": "KMeans Regime", "signal": "neutral", "value": "ERR", "note": f"KMeans error: {e}"}
 
 
-def random_forest_risk_signal(d: pd.DataFrame) -> Tuple[str, str, float, Dict[str, float]]:
-    future_dd = (d["Close"].rolling(21).min().shift(-21) / d["Close"] - 1)
-    risk_label = (future_dd <= -0.05).astype(int)
-    cols = ["ret_5d", "ret_21d", "ret_63d", "dist_sma50", "dist_sma200", "rsi_14", "macd", "vol_21", "vol_63", "atr_14", "range_pct", "volume_z"]
-    x = d[cols].replace([np.inf, -np.inf], np.nan).dropna()
-    y = risk_label.loc[x.index]
-    valid = y.notna()
-    x, y = x.loc[valid], y.loc[valid]
-    if len(x) < 400:
-        return "neutral", "insufficient data", 0.0, {}
-    split = int(len(x) * 0.8)
-    model = RandomForestClassifier(
-        n_estimators=400,
-        max_depth=6,
-        min_samples_leaf=5,
-        random_state=42,
-        class_weight="balanced_subsample"
-    )
-    model.fit(x.iloc[:split], y.iloc[:split])
-    p_risk = float(model.predict_proba(x.iloc[[-1]])[0, 1])
-    signal = "bearish" if p_risk >= 0.55 else "bullish" if p_risk <= 0.35 else "neutral"
-    importances = pd.Series(model.feature_importances_, index=cols).sort_values(ascending=False).head(4)
-    top_imp = {k: round(float(v), 4) for k, v in importances.items()}
-    conf = abs(p_risk - 0.5) * 2
-    return signal, f"crash_risk_21d={p_risk:.3f}", conf, top_imp
+def logistic_21d_signal(feat: pd.DataFrame) -> Dict[str, Any]:
+    try:
+        cols = ["ret5", "ret21", "mom63", "dist_sma50", "dist_sma200", "rsi14", "vol21annualized", "atr14_pct", "vol_z"]
+        df = feat[cols + ["future_21d"]].dropna().copy()
+        if len(df) < 250:
+            return {"analysis": "Logistic ML 21d", "signal": "neutral", "value": "N/A", "note": "Insufficient data"}
+        y = (df["future_21d"] > 0).astype(int)
+        X = df[cols]
+        split = max(int(len(df) * 0.8), len(df) - 120)
+        Xtr, ytr = X.iloc[:split], y.iloc[:split]
+        Xte = X.iloc[split:]
+        scaler = StandardScaler()
+        Xtr_s = scaler.fit_transform(Xtr)
+        Xte_s = scaler.transform(Xte)
+        model = LogisticRegression(max_iter=2000, class_weight="balanced", random_state=42)
+        model.fit(Xtr_s, ytr)
+        p = model.predict_proba(Xte_s)[-1, 1]
+        sig = "bullish" if p >= 0.55 else "bearish" if p <= 0.45 else "neutral"
+        return {"analysis": "Logistic ML 21d", "signal": sig, "value": f"{p:.2%}", "note": "Probability next 21d return > 0"}
+    except Exception as e:
+        return {"analysis": "Logistic ML 21d", "signal": "neutral", "value": "ERR", "note": f"Logistic error: {e}"}
 
 
-def monte_carlo_signal(d: pd.DataFrame, horizon: int = 63, sims: int = MC_SIMS) -> Tuple[str, str, float]:
-    rets = d["ret_1d"].dropna().tail(252 * 3)
-    if len(rets) < 200:
-        return "neutral", "insufficient data", 0.0
-    mu = rets.mean()
-    sigma = rets.std()
-    rand = np.random.normal(mu, sigma, size=(sims, horizon))
-    paths = np.exp(np.log1p(rand).sum(axis=1)) - 1
-    prob_up = float((paths > 0).mean())
-    median_ret = float(np.median(paths))
-    signal = "bullish" if prob_up >= 0.56 and median_ret > 0 else "bearish" if prob_up <= 0.44 and median_ret < 0 else "neutral"
-    conf = abs(prob_up - 0.5) * 2
-    return signal, f"p_up_63d={prob_up:.3f}, med={median_ret:.3%}", conf
+def random_forest_risk_signal(feat: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, float]]:
+    try:
+        cols = ["ret1", "ret5", "ret21", "mom63", "dist_sma50", "dist_sma200", "rsi14", "vol21annualized", "atr14_pct", "vol_z", "price_z20"]
+        df = feat[cols + ["future_21d"]].dropna().copy()
+        if len(df) < 300:
+            return (
+                {"analysis": "Random Forest Risk", "signal": "neutral", "value": "N/A", "note": "Insufficient data"},
+                {}
+            )
+        y = (df["future_21d"] > 0).astype(int)
+        X = df[cols]
+        split = max(int(len(df) * 0.8), len(df) - 120)
+        Xtr, ytr = X.iloc[:split], y.iloc[:split]
+        Xte = X.iloc[split:]
+        model = RandomForestClassifier(
+            n_estimators=300,
+            max_depth=6,
+            min_samples_leaf=8,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=-1,
+        )
+        model.fit(Xtr, ytr)
+        p = model.predict_proba(Xte)[-1, 1]
+        sig = "bullish" if p >= 0.57 else "bearish" if p <= 0.43 else "neutral"
+        importances = dict(zip(cols, model.feature_importances_))
+        importances = dict(sorted(importances.items(), key=lambda kv: kv[1], reverse=True)[:5])
+        return (
+            {"analysis": "Random Forest Risk", "signal": sig, "value": f"{p:.2%}", "note": "RF probability next 21d return > 0"},
+            importances
+        )
+    except Exception as e:
+        return (
+            {"analysis": "Random Forest Risk", "signal": "neutral", "value": "ERR", "note": f"RF error: {e}"},
+            {}
+        )
 
 
-# ---------------------------------------------------------------------
-# COMPOSITE TECHNICALS
-# ---------------------------------------------------------------------
-def technical_signals(d: pd.DataFrame) -> List[Dict[str, Any]]:
-    last = d.dropna().iloc[-1]
-    results: List[Dict[str, Any]] = []
-
-    add_analysis(results, "Trend 50/200",
-        "bullish" if last["sma_50"] > last["sma_200"] else "bearish",
-        round(float(last["sma50_sma200"] * 100), 2), "Golden/death cross regime")
-    add_analysis(results, "Price vs SMA200",
-        "bullish" if last["Close"] > last["sma_200"] else "bearish",
-        round(float(last["dist_sma200"] * 100), 2), "Percent above/below 200-day average")
-    add_analysis(results, "Price vs SMA50",
-        "bullish" if last["Close"] > last["sma_50"] else "bearish",
-        round(float(last["dist_sma50"] * 100), 2), "Percent above/below 50-day average")
-    add_analysis(results, "63/126 Momentum",
-        "bullish" if last["ret_63d"] > 0 and last["ret_126d"] > 0 else "bearish" if last["ret_63d"] < 0 and last["ret_126d"] < 0 else "neutral",
-        round(float(last["ret_63d"] * 100), 2), "Quarter and half-year momentum")
-    add_analysis(results, "MACD Regime",
-        "bullish" if last["macd"] > last["macd_signal"] and last["macd"] > 0 else "bearish" if last["macd"] < last["macd_signal"] and last["macd"] < 0 else "neutral",
-        round(float(last["macd"]), 4), "MACD vs signal and zero line")
-    add_analysis(results, "RSI Swing",
-        "bullish" if 50 < last["rsi_14"] < 68 else "bearish" if 32 < last["rsi_14"] < 50 else "neutral",
-        round(float(last["rsi_14"]), 2), "RSI trend zone with extension awareness")
-    add_analysis(results, "21-day Return",
-        "bullish" if last["ret_21d"] > 0 else "bearish",
-        round(float(last["ret_21d"] * 100), 2), "One-month return sign")
-    vm = float(last["ret_63d"] / max(last["vol_21"], 1e-9))
-    add_analysis(results, "Vol-adjusted Momentum",
-        "bullish" if vm > 0.4 else "bearish" if vm < -0.4 else "neutral",
-        round(vm, 3), "Momentum divided by annualized vol")
-    return results
+def monte_carlo_signal(feat: pd.DataFrame, sims: int = MC_SIMS) -> Dict[str, Any]:
+    try:
+        r = feat["ret1"].dropna().tail(252)
+        if len(r) < 100:
+            return {"analysis": "Monte Carlo 63d", "signal": "neutral", "value": "N/A", "note": "Insufficient data"}
+        mu = r.mean()
+        sd = r.std(ddof=0)
+        horizon = 63
+        rng = np.random.default_rng(42)
+        paths = rng.normal(mu, sd, size=(sims, horizon))
+        cum = (1.0 + paths).prod(axis=1) - 1.0
+        p_up = float((cum > 0).mean())
+        sig = "bullish" if p_up >= 0.55 else "bearish" if p_up <= 0.45 else "neutral"
+        return {"analysis": "Monte Carlo 63d", "signal": sig, "value": f"{p_up:.2%}", "note": "Probability of positive 63d simulated return"}
+    except Exception as e:
+        return {"analysis": "Monte Carlo 63d", "signal": "neutral", "value": "ERR", "note": f"MC error: {e}"}
 
 
-def extension_filter(d: pd.DataFrame) -> Tuple[str, str]:
-    last = d.dropna().iloc[-1]
-    overextended_up = last["rsi_14"] >= 72 and last["dist_sma50"] >= 0.045
-    overextended_dn = last["rsi_14"] <= 30 and last["dist_sma50"] <= -0.045
-    if overextended_up:
-        return "neutral", f"bullish trend but extended (RSI={last['rsi_14']:.1f}, dist50={last['dist_sma50']:.2%})"
-    if overextended_dn:
-        return "neutral", f"bearish trend but stretched down (RSI={last['rsi_14']:.1f}, dist50={last['dist_sma50']:.2%})"
-    return ("bullish" if last["Close"] > last["sma_50"] else "bearish"), "extension filter clear"
-
-
-def cross_asset_signals(market: Dict[str, pd.DataFrame]) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    latest = {}
-    for t, df in market.items():
-        d = engineer_features(df)
-        latest[t] = d.dropna().iloc[-1]
-
-    risk_on_bulls = sum(1 for t in RISK_ON_SET if latest[t]["Close"] > latest[t]["sma_200"] and latest[t]["ret_63d"] > 0)
-    risk_off_bulls = sum(1 for t in RISK_OFF_SET if latest[t]["Close"] > latest[t]["sma_200"] and latest[t]["ret_63d"] > 0)
-    stress_up = latest["VIXY"]["ret_21d"] > 0 and latest["VIXY"]["Close"] > latest["VIXY"]["sma_50"]
-
-    breadth_signal = "bullish" if risk_on_bulls >= 3 else "bearish" if risk_on_bulls <= 1 else "neutral"
-    add_analysis(results, "Breadth Risk-On", breadth_signal, f"{risk_on_bulls}/4",
-                 "SPY, QQQ, IWM, HYG above SMA200 with positive 63d momentum")
-
-    if stress_up and risk_off_bulls >= 1:
-        macro_signal = "bearish"
-    elif risk_on_bulls >= 3 and not stress_up:
-        macro_signal = "bullish"
+def extension_filter(feat: pd.DataFrame) -> Dict[str, Any]:
+    row = feat.iloc[-1]
+    z = row["price_z20"]
+    if z >= 2.0:
+        sig = "bearish"
+        note = "Market stretched above 20d distribution"
+    elif z <= -2.0:
+        sig = "bullish"
+        note = "Market stretched below 20d distribution"
     else:
-        macro_signal = "neutral"
-
-    add_analysis(results, "Cross-Asset Macro", macro_signal, f"risk_off={risk_off_bulls}, stress={'UP' if stress_up else 'DOWN'}",
-                 "TLT/GLD and VIXY stress overlay")
-    return results
+        sig = "neutral"
+        note = "No extreme short-term extension"
+    return {"analysis": "Extension Filter", "signal": sig, "value": f"{z:.2f}", "note": note}
 
 
-# ---------------------------------------------------------------------
-# COMPOSITE SCORE / REGIME CHANGE
-# ---------------------------------------------------------------------
-def weighted_score(df: pd.DataFrame) -> Tuple[float, float, str]:
+def cross_asset_signals(market_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    rows = []
+    closes = {}
+    for ticker, df in market_data.items():
+        if df is None or df.empty or "Close" not in df.columns:
+            continue
+        closes[ticker] = df["Close"].copy()
+
+    aligned = pd.DataFrame(closes).dropna()
+    if aligned.empty:
+        return pd.DataFrame(columns=["analysis", "signal", "value", "note"])
+
+    ret63 = aligned.pct_change(63).iloc[-1]
+    ret21 = aligned.pct_change(21).iloc[-1]
+
+    risk_on_mean = float(ret63[[c for c in RISK_ON_SET if c in ret63.index]].mean())
+    risk_off_mean = float(ret63[[c for c in RISK_OFF_SET if c in ret63.index]].mean())
+    stress_ret = float(ret21["VIXY"]) if "VIXY" in ret21.index else 0.0
+
+    breadth_score = 0
+    breadth_n = 0
+    for t in ["SPY", "QQQ", "IWM", "HYG"]:
+        if t in aligned.columns:
+            s = aligned[t]
+            sma50 = s.rolling(50).mean().iloc[-1]
+            if pd.notna(sma50):
+                breadth_n += 1
+                breadth_score += int(s.iloc[-1] > sma50)
+    breadth_ratio = safe_pct(breadth_score, max(breadth_n, 1))
+    breadth_signal = "bullish" if breadth_ratio >= 0.75 else "bearish" if breadth_ratio <= 0.25 else "neutral"
+
+    spread = risk_on_mean - risk_off_mean
+    macro_score = spread - 0.5 * stress_ret
+    macro_signal = "bullish" if macro_score > 0.02 else "bearish" if macro_score < -0.02 else "neutral"
+
+    rows.append({
+        "analysis": "Breadth Risk-On",
+        "signal": breadth_signal,
+        "value": f"{breadth_ratio:.2%}",
+        "note": "Fraction of SPY/QQQ/IWM/HYG above 50dma",
+    })
+    rows.append({
+        "analysis": "Cross-Asset Macro",
+        "signal": macro_signal,
+        "value": f"{macro_score:.2%}",
+        "note": f"63d risk-on minus risk-off, stress adjusted (VIXY 21d={stress_ret:.2%})",
+    })
+    return pd.DataFrame(rows)
+
+
+def weighted_score(results: List[Dict[str, Any]]) -> Tuple[float, int, int, int]:
     score = 0.0
-    max_score = 0.0
-    for _, row in df.iterrows():
-        w = MODEL_WEIGHTS.get(row["analysis"], 1.0)
-        max_score += abs(w)
-        if row["signal"] == "bullish":
+    bull = bear = neutral = 0
+    for r in results:
+        name = r["analysis"]
+        w = MODEL_WEIGHTS.get(name, 1.0)
+        sig = str(r["signal"]).lower()
+        if sig == "bullish":
             score += w
-        elif row["signal"] == "bearish":
+            bull += 1
+        elif sig == "bearish":
             score -= w
-    conf = abs(score) / max(max_score, 1e-9)
-    final = "bullish" if score >= 2.5 else "bearish" if score <= -2.5 else "neutral"
-    return score, conf, final
+            bear += 1
+        else:
+            neutral += 1
+    return score, bull, bear, neutral
 
 
-def compute_historical_composite_regime(d: pd.DataFrame) -> Tuple[Optional[pd.Timestamp], Optional[float]]:
-    d = d.dropna().copy()
-    if d.empty:
-        return None, None
-
-    bull = pd.Series(0.0, index=d.index)
-    bear = pd.Series(0.0, index=d.index)
-
-    w_trend = MODEL_WEIGHTS.get("Trend 50/200", 1.1)
-    bull += w_trend * (d["sma_50"] > d["sma_200"]).astype(float)
-    bear += w_trend * (d["sma_50"] < d["sma_200"]).astype(float)
-
-    w_p200 = MODEL_WEIGHTS.get("Price vs SMA200", 1.0)
-    bull += w_p200 * (d["Close"] > d["sma_200"]).astype(float)
-    bear += w_p200 * (d["Close"] < d["sma_200"]).astype(float)
-
-    w_p50 = MODEL_WEIGHTS.get("Price vs SMA50", 0.8)
-    bull += w_p50 * (d["Close"] > d["sma_50"]).astype(float)
-    bear += w_p50 * (d["Close"] < d["sma_50"]).astype(float)
-
-    w_mom = MODEL_WEIGHTS.get("63/126 Momentum", 1.2)
-    bull += w_mom * ((d["ret_63d"] > 0) & (d["ret_126d"] > 0)).astype(float)
-    bear += w_mom * ((d["ret_63d"] < 0) & (d["ret_126d"] < 0)).astype(float)
-
-    w_macd = MODEL_WEIGHTS.get("MACD Regime", 0.9)
-    bull += w_macd * ((d["macd"] > d["macd_signal"]) & (d["macd"] > 0)).astype(float)
-    bear += w_macd * ((d["macd"] < d["macd_signal"]) & (d["macd"] < 0)).astype(float)
-
-    w_rsi = MODEL_WEIGHTS.get("RSI Swing", 0.5)
-    bull += w_rsi * ((d["rsi_14"] > 50) & (d["rsi_14"] < 68)).astype(float)
-    bear += w_rsi * ((d["rsi_14"] > 32) & (d["rsi_14"] < 50)).astype(float)
-
-    w_21 = MODEL_WEIGHTS.get("21-day Return", 0.6)
-    bull += w_21 * (d["ret_21d"] > 0).astype(float)
-    bear += w_21 * (d["ret_21d"] < 0).astype(float)
-
-    vm = d["ret_63d"] / d["vol_21"].replace(0, np.nan)
-    w_vm = MODEL_WEIGHTS.get("Vol-adjusted Momentum", 0.9)
-    bull += w_vm * (vm > 0.4).astype(float)
-    bear += w_vm * (vm < -0.4).astype(float)
-
-    score = bull - bear
-    regime = pd.Series(0, index=d.index, dtype=int)
-    regime[score >= 2.5] = 1
-    regime[score <= -2.5] = -1
-
-    current = int(regime.iloc[-1])
-    if len(regime) < 2:
-        return d.index[-1], float(d["Close"].iloc[-1])
-
-    for i in range(len(regime) - 2, -1, -1):
-        if int(regime.iloc[i]) != current:
-            start_idx = d.index[i + 1]
-            return start_idx, float(d.loc[start_idx, "Close"])
-
-    first_idx = d.index[0]
-    return first_idx, float(d.loc[first_idx, "Close"])
-
-
-# ---------------------------------------------------------------------
-# PERSISTENCE / LOGGING
-# ---------------------------------------------------------------------
-def load_recent_history(ticker: str) -> pd.DataFrame:
+def load_recent_history() -> pd.DataFrame:
     if not HISTORY_FILE.exists():
         return pd.DataFrame()
     try:
         df = pd.read_csv(HISTORY_FILE)
-        return df[df["ticker"] == ticker].tail(PERSISTENCE_DAYS - 1)
+        return df
     except Exception:
         return pd.DataFrame()
 
 
-def persistence_filter(ticker: str, raw_signal: str) -> Tuple[str, str]:
-    if PERSISTENCE_DAYS <= 1:
-        return raw_signal, "persistence disabled"
-    hist = load_recent_history(ticker)
-    if hist.empty or len(hist) < PERSISTENCE_DAYS - 1:
-        return raw_signal, f"insufficient history for persistence ({len(hist)}/{PERSISTENCE_DAYS - 1})"
-    prior = list(hist["raw_final_signal"].astype(str))
-    if all(x == raw_signal for x in prior) and raw_signal != "neutral":
-        return raw_signal, f"confirmed for {PERSISTENCE_DAYS} consecutive runs"
-    if raw_signal == "neutral":
-        return "neutral", "current signal neutral"
-    return "neutral", f"awaiting persistence confirmation; prior={prior}"
+def compute_historical_composite_regime(ticker: str) -> Tuple[Optional[str], Optional[str], Optional[float]]:
+    hist = load_recent_history()
+    if hist.empty or "ticker" not in hist.columns:
+        return None, None, None
+    sub = hist[hist["ticker"] == ticker].copy()
+    if sub.empty or "final_signal" not in sub.columns:
+        return None, None, None
+
+    sub = sub.sort_values("timestamp_utc")
+    last_sig = None
+    last_date = None
+    last_px = None
+
+    for _, row in sub.iterrows():
+        sig = row.get("final_signal")
+        if sig != last_sig:
+            last_sig = sig
+            ts = str(row.get("timestamp_utc", ""))[:10]
+            last_date = ts if ts else None
+            last_px = to_float_safe(row.get("composite_change_price"))
+    return last_sig, last_date, last_px
 
 
-def atr_risk_text(product: str, open_positions: List[OpenPosition], amp_stop_text: str, ticker_df: pd.DataFrame) -> List[str]:
-    d = engineer_features(ticker_df).dropna()
-    last = d.iloc[-1]
-    atr = float(last["atr_14"])
-    close = float(last["Close"])
-    atr_pct = atr / close
-    lines = [f"ETF ATR14 proxy: {atr:.2f} ({atr_pct:.2%} of price)"]
-    if amp_stop_text and "@" in amp_stop_text:
-        lines.append(f"AMP nearest risk order: {amp_stop_text}")
-    if open_positions:
-        for p in open_positions:
-            lines.append(f"Live C2 position: {p.symbol} {p.side.upper()} x {p.qty} @ {p.entry_price}")
+def persistence_filter(ticker: str, raw_signal: str, close: float) -> Tuple[str, str, Optional[str], Optional[float]]:
+    hist = load_recent_history()
+    if hist.empty or "ticker" not in hist.columns:
+        return raw_signal, "No history yet; using raw signal.", None, close
+
+    sub = hist[hist["ticker"] == ticker].copy()
+    if sub.empty or "raw_final_signal" not in sub.columns:
+        return raw_signal, "No ticker-specific history; using raw signal.", None, close
+
+    sub = sub.sort_values("timestamp_utc")
+    tail = sub.tail(max(PERSISTENCE_DAYS - 1, 0))
+
+    recent = tail["raw_final_signal"].tolist() + [raw_signal]
+    same = len(recent) >= PERSISTENCE_DAYS and all(x == raw_signal for x in recent[-PERSISTENCE_DAYS:])
+
+    if same:
+        last_change_date = str(datetime.now(timezone.utc).date())
+        return raw_signal, f"Signal persisted for {PERSISTENCE_DAYS} checks.", last_change_date, close
+
+    prior_final = sub["final_signal"].dropna().iloc[-1] if "final_signal" in sub.columns and not sub["final_signal"].dropna().empty else "neutral"
+    if prior_final == raw_signal:
+        return raw_signal, "Raw signal matches prior final signal.", None, close
+
+    return prior_final, f"Persistence gate held prior final signal until {PERSISTENCE_DAYS} aligned runs.", None, close
+
+
+def atr_risk_text(product: str, current_positions: List[OpenPosition], nearest_order: str, proxy_df: pd.DataFrame) -> List[str]:
+    if proxy_df is None or proxy_df.empty:
+        return ["ATR risk unavailable: proxy data missing."]
+    feat = engineer_features(proxy_df)
+    if feat.empty:
+        return ["ATR risk unavailable: insufficient proxy history."]
+    row = feat.iloc[-1]
+    atr = row["atr14"]
+    close = row["Close"]
+    atr_pct = row["atr14_pct"]
+    lines = [
+        f"Proxy close: {close:.2f}",
+        f"ATR14: {atr:.2f} ({atr_pct:.2%} of price)",
+        f"Nearest AMP order reference: {nearest_order}",
+        f"Mapped futures symbol: {SUPPORTED_PRODUCTS.get(product.upper(), 'N/A')}",
+    ]
+    if current_positions:
+        for p in current_positions:
+            lines.append(f"Open position: {p.symbol} {p.side.upper()} x {p.qty} @ {p.entry_price}")
+    else:
+        lines.append("No currently detected MES/MNQ position for ATR framing.")
     return lines
 
 
-def save_run(rows: List[Dict[str, Any]]):
+def save_run(rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        return
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    file_exists = HISTORY_FILE.exists()
-    with open(HISTORY_FILE, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(rows)
+    df = pd.DataFrame(rows)
+    write_header = not HISTORY_FILE.exists()
+    df.to_csv(HISTORY_FILE, mode="a", header=write_header, index=False)
 
 
-# ---------------------------------------------------------------------
-# ANALYSIS SUITE
-# ---------------------------------------------------------------------
-def analysis_suite(ticker: str, df: pd.DataFrame, cross_asset_rows: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, float]]:
-    d = engineer_features(df)
-    d_clean = d.dropna().copy()
-    if d_clean.empty:
-        raise RuntimeError(f"No usable feature rows for {ticker}")
+def analysis_suite(
+    ticker: str,
+    market_df: pd.DataFrame,
+    crossasset_rows: pd.DataFrame,
+) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, float]]:
+    feat = engineer_features(market_df)
+    if feat.empty:
+        raise RuntimeError(f"Not enough feature history for {ticker}")
 
-    results = technical_signals(d)
+    results = technical_signals(feat)
+    results.append(hmm_regime_signal(feat))
+    results.append(markov_switch_signal(feat))
+    results.append(gmm_regime_signal(feat))
+    results.append(kmeans_regime_signal(feat))
+    results.append(logistic_21d_signal(feat))
+    rf_row, rf_top = random_forest_risk_signal(feat)
+    results.append(rf_row)
+    results.append(monte_carlo_signal(feat))
+    if not crossasset_rows.empty:
+        for _, r in crossasset_rows.iterrows():
+            results.append(r.to_dict())
+    results.append(extension_filter(feat))
 
-    sig, note, _ = hmm_regime_signal(d)
-    add_analysis(results, "Gaussian HMM", sig, note, "3-state hidden Markov regime detection")
+    tbl = pd.DataFrame(results)
+    score, bullish_count, bearish_count, neutral_count = weighted_score(results)
 
-    sig, note, _ = markov_switch_signal(d)
-    add_analysis(results, "Markov Switching", sig, note, "2-regime Markov regression using filtered probabilities")
+    total_weight = sum(MODEL_WEIGHTS.get(r["analysis"], 1.0) for r in results)
+    confidence = min(abs(score) / max(total_weight, 1e-9), 1.0)
+    raw_signal = signal_from_score(score, 0.75, -0.75)
 
-    sig, note, _ = gmm_regime_signal(d)
-    add_analysis(results, "Gaussian Mixture", sig, note, "3-cluster unsupervised regime classification")
+    row = feat.iloc[-1]
+    final_signal, persistence_note, change_date, change_price = persistence_filter(ticker, raw_signal, float(row["Close"]))
 
-    sig, note, _ = kmeans_regime_signal(d)
-    add_analysis(results, "KMeans Regime", sig, note, "3-cluster unsupervised regime classification")
+    hist_sig, hist_date, hist_px = compute_historical_composite_regime(ticker)
+    if change_date is None:
+        change_date = hist_date
+    if change_price is None:
+        change_price = hist_px if hist_px is not None else float(row["Close"])
 
-    sig, note, _ = logistic_21d_signal(d)
-    add_analysis(results, "Logistic ML 21d", sig, note, "Probability next 21-day return is positive")
-
-    sig, note, _, rf_top = random_forest_risk_signal(d)
-    add_analysis(results, "Random Forest Risk", sig, note, f"Probability of >=5% drawdown over next 21 days; top features={rf_top}")
-
-    sig, note, _ = monte_carlo_signal(d)
-    add_analysis(results, "Monte Carlo 63d", sig, note, "Simulated 63-day return distribution")
-
-    ext_sig, ext_note = extension_filter(d)
-    add_analysis(results, "Extension Filter", ext_sig, ext_note, "Avoid chasing overextended swing conditions")
-
-    results.extend(cross_asset_rows)
-
-    out = pd.DataFrame(results)
-    bullish = int((out["signal"] == "bullish").sum())
-    bearish = int((out["signal"] == "bearish").sum())
-    neutral = int((out["signal"] == "neutral").sum())
-
-    raw_score, confidence, raw_final = weighted_score(out)
-    persisted_final, persistence_note = persistence_filter(ticker, raw_final)
-    comp_date, comp_price = compute_historical_composite_regime(d_clean)
-
-    last = d_clean.iloc[-1]
     summary = {
         "ticker": ticker,
-        "close": float(last["Close"]),
-        "sma_50": float(last["sma_50"]),
-        "sma_200": float(last["sma_200"]),
-        "rsi_14": float(last["rsi_14"]),
-        "atr_14": float(last["atr_14"]),
-        "vol_21_annualized": float(last["vol_21"]),
-        "bullish_count": bullish,
-        "bearish_count": bearish,
-        "neutral_count": neutral,
-        "analyses_total": int(len(out)),
-        "raw_score": float(raw_score),
+        "close": float(row["Close"]),
+        "sma50": float(row["sma50"]),
+        "sma200": float(row["sma200"]),
+        "rsi14": float(row["rsi14"]),
+        "atr14": float(row["atr14"]),
+        "vol21annualized": float(row["vol21annualized"]),
+        "bullish_count": bullish_count,
+        "bearish_count": bearish_count,
+        "neutral_count": neutral_count,
+        "raw_score": float(score),
         "confidence": float(confidence),
-        "raw_final_signal": raw_final,
-        "final_signal": persisted_final,
+        "raw_final_signal": raw_signal,
+        "final_signal": final_signal,
         "persistence_note": persistence_note,
-        "composite_change_date": comp_date.strftime('%Y-%m-%d') if comp_date is not None else '',
-        "composite_change_price": float(comp_price) if comp_price is not None else float('nan'),
+        "composite_change_date": change_date,
+        "composite_change_price": float(change_price) if change_price is not None else None,
+        "historical_composite_signal": hist_sig,
     }
-    return out, summary, rf_top
+    return tbl, summary, rf_top
 
 
-def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: Optional[str]) -> Dict[str, Any]:
-    score = spy_summary["raw_score"] + qqq_summary["raw_score"]
-    combined = "bullish" if score >= 4 else "bearish" if score <= -4 else "neutral"
+def combine_market_confirmation(
+    spy_summary: Dict[str, Any],
+    qqq_summary: Dict[str, Any],
+    amp_side: Optional[str],
+) -> Dict[str, Any]:
+    score = 0.0
+    score += 1.0 * spy_summary["raw_score"]
+    score += 1.15 * qqq_summary["raw_score"]
 
-    persisted = (
-        "bullish"
-        if spy_summary["final_signal"] == "bullish" and qqq_summary["final_signal"] == "bullish"
-        else "bearish"
-        if spy_summary["final_signal"] == "bearish" and qqq_summary["final_signal"] == "bearish"
-        else "neutral"
-    )
+    market_signal = signal_from_score(score, 1.25, -1.25)
+
+    persistent_votes = [spy_summary["final_signal"], qqq_summary["final_signal"]]
+    if persistent_votes.count("bullish") >= 2:
+        persistent_signal = "bullish"
+    elif persistent_votes.count("bearish") >= 2:
+        persistent_signal = "bearish"
+    else:
+        persistent_signal = "neutral"
 
     congruent = False
-    if amp_side is not None:
-        congruent = (amp_side == "long" and combined == "bullish") or (amp_side == "short" and combined == "bearish")
+    if amp_side == "long" and market_signal == "bullish":
+        congruent = True
+    elif amp_side == "short" and market_signal == "bearish":
+        congruent = True
 
     return {
-        "market_signal": combined,
-        "persistent_signal": persisted,
+        "market_signal": market_signal,
+        "persistent_signal": persistent_signal,
+        "score": float(score),
         "congruent_with_amp": congruent,
-        "score": score,
     }
 
 
 # ---------------------------------------------------------------------
-# TRADE EXECUTION
+# AUTO-TRADE EXECUTION
 # ---------------------------------------------------------------------
 def maybe_execute_trade(
     apikey: str,
@@ -984,73 +1036,103 @@ def maybe_execute_trade(
         return
 
     if not AUTO_TRADE_ENABLED:
-        print(YELLOW + "AUTO-TRADE: disabled." + RESET)
+        print(YELLOW + "AUTO-TRADE: Disabled by AUTO_TRADE_ENABLED flag." + RESET)
         return
 
     product = best_row.product.upper()
     if product not in SUPPORTED_PRODUCTS:
-        print(RED + f"AUTO-TRADE: unsupported product {product}. No trade sent." + RESET)
+        print(RED + f"AUTO-TRADE: Unsupported product {product}. No trade sent." + RESET)
         return
 
     if desired_pos.side == "long" and confirmation["market_signal"] != "bullish":
-        print(YELLOW + "AUTO-TRADE: long signal not confirmed by market regime. No trade sent." + RESET)
+        print(
+            YELLOW
+            + "AUTO-TRADE: Long signal from AMP not confirmed by market regime. No trade sent."
+            + RESET
+        )
         return
+
     if desired_pos.side == "short" and confirmation["market_signal"] != "bearish":
-        print(YELLOW + "AUTO-TRADE: short signal not confirmed by market regime. No trade sent." + RESET)
+        print(
+            YELLOW
+            + "AUTO-TRADE: Short signal from AMP not confirmed by market regime. No trade sent."
+            + RESET
+        )
         return
 
     if confirmation["persistent_signal"] != confirmation["market_signal"]:
-        print(YELLOW + "AUTO-TRADE: persistent overlay not aligned with current market signal. No trade sent." + RESET)
+        print(
+            YELLOW
+            + "AUTO-TRADE: Persistent overlay not aligned with current market signal. No trade sent."
+            + RESET
+        )
         return
 
     spy_conf = summaries_global["SPY"]["confidence"]
     qqq_conf = summaries_global["QQQ"]["confidence"]
     min_conf = min(spy_conf, qqq_conf)
+
     if min_conf < AGREEMENT_THRESHOLD:
-        print(YELLOW + f"AUTO-TRADE: confidence gate failed ({min_conf:.1%} < {AGREEMENT_THRESHOLD:.1%}). No trade sent." + RESET)
+        print(
+            YELLOW
+            + f"AUTO-TRADE: Confidence gate failed {min_conf:.1%} < {AGREEMENT_THRESHOLD:.1%}. No trade sent."
+            + RESET
+        )
         return
 
     target_symbol = SUPPORTED_PRODUCTS[product]
+
     existing = [p for p in current_positions if p.symbol == target_symbol]
+    existing_pos = existing[0] if existing else None
 
-    if existing:
-        cur = existing[0]
-        if cur.side == desired_pos.side and cur.qty == desired_pos.qty:
-            print(YELLOW + f"AUTO-TRADE: already in desired position {cur.symbol} {cur.side} x {cur.qty}. No new order sent." + RESET)
-            return
-
-        print(YELLOW + f"AUTO-TRADE: existing position differs ({cur.symbol} {cur.side} x {cur.qty}). Sending close order first." + RESET)
-        close_payload = build_close_order(strategy_id, cur)
-        print("Close payload:", json.dumps(close_payload, ensure_ascii=False))
-
-        if DRY_RUN:
-            print(YELLOW + "DRY_RUN=1 -> close order not sent." + RESET)
-            return
-
-        result = api4_post("/Strategies/NewStrategyOrder", apikey, close_payload)
-        print("Close result:", json.dumps(result, ensure_ascii=False))
-        print(YELLOW + "AUTO-TRADE: position close sent. Re-run after C2 position updates before opening the new bracketed trade." + RESET)
+    if existing_pos and existing_pos.side == desired_pos.side and existing_pos.qty == desired_pos.qty:
+        print(
+            YELLOW
+            + f"AUTO-TRADE: Already in desired position {existing_pos.symbol} "
+              f"{existing_pos.side} x {existing_pos.qty}. No new order sent."
+            + RESET
+        )
         return
 
-    stop_points, target_points = get_bracket_distances_for_product(product)
-    parent_payload = build_parent_order_with_bracket(
+    if existing_pos and (
+        existing_pos.side != desired_pos.side or existing_pos.qty != desired_pos.qty
+    ):
+        print(
+            YELLOW
+            + f"AUTO-TRADE: Existing position differs ({existing_pos.symbol} "
+              f"{existing_pos.side} x {existing_pos.qty}). Sending close order first."
+            + RESET
+        )
+        close_payload = build_close_order(strategy_id, existing_pos)
+        print("Close payload:", json.dumps(close_payload, ensure_ascii=False))
+        if DRY_RUN:
+            print(YELLOW + "DRY_RUN=1 - close order not sent." + RESET)
+            return
+        close_result = api4_post("/Strategies/NewStrategyOrder", apikey, close_payload)
+        print("Close result:", json.dumps(close_result, ensure_ascii=False))
+        print(
+            YELLOW
+            + "AUTO-TRADE: Position close sent. Re-run after C2 position updates "
+              "before opening the new trade."
+            + RESET
+        )
+        return
+
+    parent_payload = build_parent_order_market_only(
         strategy_id=strategy_id,
         full_symbol=target_symbol,
         side=desired_pos.side,
         qty=desired_pos.qty,
-        stop_loss=stop_points,
-        profit_target=target_points,
     )
-
-    print("Bracketed entry payload:", json.dumps(parent_payload, ensure_ascii=False))
+    print("Market entry payload:", json.dumps(parent_payload, ensure_ascii=False))
 
     if DRY_RUN:
-        print(YELLOW + "DRY_RUN=1 -> bracketed parent order not sent." + RESET)
+        print(YELLOW + "DRY_RUN=1 - market entry order not sent." + RESET)
         return
 
     result = api4_post("/Strategies/NewStrategyOrder", apikey, parent_payload)
-    print("Bracketed entry result:", json.dumps(result, ensure_ascii=False))
-    print(GREEN + "AUTO-TRADE: bracketed entry order submitted." + RESET)
+    print("Market entry result:", json.dumps(result, ensure_ascii=False))
+    print(GREEN + "AUTO-TRADE: market entry order submitted (no bracket). Manage stop/target manually." + RESET)
 
 
 # ---------------------------------------------------------------------
@@ -1063,11 +1145,14 @@ def main():
     systemid_raw = os.getenv("C2_SYSTEM_ID", "").strip()
     now = datetime.now(timezone.utc).isoformat()
 
-    print(f"=== AMP + FUTURES CAPITAL REGIME TOOLBOX at {now} UTC ===")
     print(
-        f"Dependencies: HMM={HMM_AVAILABLE}, Markov={MARKOV_AVAILABLE} "
-        f"| Lookback={LOOKBACK_YEARS}y daily | Persistence={PERSISTENCE_DAYS} "
-        f"| AutoTrade={AUTO_TRADE_ENABLED} | DryRun={DRY_RUN} | AgreementThreshold={AGREEMENT_THRESHOLD*100:.0f}%"
+        f"{CYAN}AMP FUTURES CAPITAL REGIME TOOLBOX at {now} UTC{RESET}"
+    )
+    print(
+        f"{CYAN}Dependencies: HMM={HMM_AVAILABLE}, Markov={MARKOV_AVAILABLE} | "
+        f"Lookback={LOOKBACK_YEARS}y daily | Persistence={PERSISTENCE_DAYS} | "
+        f"AutoTrade={AUTO_TRADE_ENABLED} DryRun={DRY_RUN} "
+        f"AgreementThreshold={AGREEMENT_THRESHOLD * 100.0:.1f}%{RESET}"
     )
 
     html = fetch_amp_html()
@@ -1082,39 +1167,48 @@ def main():
     desired_pos = parse_direction_and_size(best_row.current_position)
     if not desired_pos:
         print(
-            YELLOW + BOLD +
-            f"\nNO NEW SIGNALS: AMP is FLAT for top system ({best_row.system}, product {best_row.product})." +
-            RESET
+            YELLOW
+            + BOLD
+            + f"NEW SIGNALS: AMP is FLAT for top system {best_row.system}, product {best_row.product}."
+            + RESET
         )
 
-    current_positions = []
+    current_positions: List[OpenPosition] = []
     if apikey and systemid_raw:
         try:
-            open_pos_raw = get_open_positions(apikey, int(systemid_raw))
-            current_positions = extract_supported_open_positions(open_pos_raw)
+            openpos_raw = get_open_positions(apikey, int(systemid_raw))
+            current_positions = extract_supported_open_positions(openpos_raw)
         except Exception as e:
             print(YELLOW + f"Could not fetch C2 open positions: {e}" + RESET)
 
-    market_data = {}
+    market_data: Dict[str, pd.DataFrame] = {}
     for ticker in ALL_TICKERS:
         market_data[ticker] = download_market_data(ticker)
 
-    cross_asset_rows = cross_asset_signals(market_data)
+    crossasset_rows = cross_asset_signals(market_data)
 
-    tables = {}
-    summaries = {}
-    rf_features = {}
+    tables: Dict[str, pd.DataFrame] = {}
+    summaries: Dict[str, Dict[str, Any]] = {}
+    rf_features: Dict[str, Dict[str, float]] = {}
 
     for ticker in ["SPY", "QQQ"]:
-        tbl, summary, rf_top = analysis_suite(ticker, market_data[ticker], cross_asset_rows)
+        tbl, summary, rftop = analysis_suite(
+            ticker,
+            market_data[ticker],
+            crossasset_rows,
+        )
         tables[ticker] = tbl
         summaries[ticker] = summary
-        rf_features[ticker] = rf_top
+        rf_features[ticker] = rftop
 
     summaries_global = summaries
-    confirmation = combine_market_confirmation(summaries["SPY"], summaries["QQQ"], desired_pos.side if desired_pos else None)
+    confirmation = combine_market_confirmation(
+        summaries["SPY"],
+        summaries["QQQ"],
+        desired_pos.side if desired_pos else None,
+    )
 
-    traded_etf = ETF_MAP.get(best_row.product, "QQQ")
+    trade_etf = ETF_MAP.get(best_row.product, "QQQ")
 
     print_block(
         "SCRAPED AMP SIGNAL",
@@ -1124,21 +1218,34 @@ def main():
             f"Product: {best_row.product}",
             f"Scraped current position: {best_row.current_position}",
             f"Nearest order: {best_row.nearest_order}",
-            f"AMP interpreted side: {desired_pos.side.upper()} x {desired_pos.qty}" if desired_pos else "AMP interpreted side: FLAT / NO ACTIVE SIGNAL",
-            f"ETF proxy used for traded product: {traded_etf}",
+            (
+                f"AMP interpreted side: {desired_pos.side.upper()} x {desired_pos.qty}"
+                if desired_pos
+                else "AMP interpreted side: FLAT / NO ACTIVE SIGNAL"
+            ),
+            f"ETF proxy used for traded product: {trade_etf}",
         ],
         CYAN,
     )
 
     if current_positions:
-        pos_lines = [f"{p.symbol} | {p.side.upper()} | Qty={p.qty} | Entry={p.entry_price}" for p in current_positions]
+        pos_lines = [
+            f"{p.symbol} {p.side.upper()} x {p.qty} @ {p.entry_price}"
+            for p in current_positions
+        ]
     else:
         pos_lines = ["No supported open MES/MNQ positions detected or C2 credentials unavailable."]
+
     print_block("OPEN POSITIONS", pos_lines, GREEN)
 
     print_block(
         "RISK NOTES",
-        atr_risk_text(best_row.product, current_positions, best_row.nearest_order, market_data[traded_etf]),
+        atr_risk_text(
+            best_row.product,
+            current_positions,
+            best_row.nearest_order,
+            market_data[trade_etf],
+        ),
         MAGENTA,
     )
 
@@ -1146,25 +1253,23 @@ def main():
         s = summaries[ticker]
         base_signal = s["final_signal"] if s["final_signal"] != "neutral" else s["raw_final_signal"]
         color = color_for_signal(base_signal)
-
-        comp_since = "N/A"
+        compsince = "N/A"
         days_age = None
         if s["composite_change_date"]:
-            comp_since = f"{s['composite_change_date']} at {s['composite_change_price']:.2f}"
+            price_txt = f"{s['composite_change_price']:.2f}" if s["composite_change_price"] is not None else "N/A"
+            compsince = f"{s['composite_change_date']} at {price_txt}"
             days_age = days_since(s["composite_change_date"])
-
-        age_text = f"{days_age} days since last change" if days_age is not None else "Age: unknown"
+        age_text = f"{days_age} days since last change" if days_age is not None else "Age unknown"
 
         print_block(
             f"{ticker} SUMMARY",
             [
-                f"Close: {s['close']:.2f}",
-                f"SMA50: {s['sma_50']:.2f} | SMA200: {s['sma_200']:.2f}",
-                f"RSI14: {s['rsi_14']:.2f} | ATR14: {s['atr_14']:.2f} | 21d Annualized Vol: {s['vol_21_annualized']:.2%}",
+                f"Close: {s['close']:.2f} | SMA50 {s['sma50']:.2f} / SMA200 {s['sma200']:.2f}",
+                f"RSI14 {s['rsi14']:.2f} | ATR14 {s['atr14']:.2f} | 21d Annualized Vol {s['vol21annualized']:.2%}",
                 f"Bullish: {s['bullish_count']} | Bearish: {s['bearish_count']} | Neutral: {s['neutral_count']}",
-                f"Weighted score: {s['raw_score']:.2f} | Confidence: {s['confidence']:.1%}",
-                f"Raw regime: {s['raw_final_signal'].upper()} | Final regime after persistence: {s['final_signal'].upper()}",
-                f"Composite regime in force since: {comp_since}",
+                f"Weighted score: {s['raw_score']:.2f} | Confidence {s['confidence']:.1%}",
+                f"Raw regime: {s['raw_final_signal'].upper()} | Final after persistence: {s['final_signal'].upper()}",
+                f"Composite regime in force since: {compsince}",
                 f"Composite regime age: {age_text}",
                 f"Persistence note: {s['persistence_note']}",
             ],
@@ -1173,7 +1278,13 @@ def main():
 
         for _, row in tables[ticker].iterrows():
             c = color_for_signal(row["signal"])
-            print(f"{c}{row['analysis']:<20} | {row['signal'].upper():7s} | {row['value']} | {row['note']}{RESET}")
+            print(
+                f"{c}{str(row['analysis']):<20} | {str(row['signal']).upper():7s} | "
+                f"{row['value']} | {row['note']}{RESET}"
+            )
+
+        if rf_features.get(ticker):
+            print(BLUE + f"Top RF features for {ticker}: {rf_features[ticker]}" + RESET)
 
     final_color = color_for_signal(confirmation["market_signal"])
     amp_align = "YES" if confirmation["congruent_with_amp"] else "NO"
@@ -1181,11 +1292,17 @@ def main():
     print_block(
         "FINAL RECOMMENDATION",
         [
-            f"SPY final: {summaries['SPY']['final_signal'].upper()} | raw score {summaries['SPY']['raw_score']:.2f} | confidence {summaries['SPY']['confidence']:.1%}",
-            f"QQQ final: {summaries['QQQ']['final_signal'].upper()} | raw score {summaries['QQQ']['raw_score']:.2f} | confidence {summaries['QQQ']['confidence']:.1%}",
-            f"Combined weighted ETF confirmation: {confirmation['market_signal'].upper()} | aggregate score {confirmation['score']:.2f}",
+            f"SPY final: {summaries['SPY']['final_signal'].upper()} | "
+            f"raw score {summaries['SPY']['raw_score']:.2f} | "
+            f"confidence {summaries['SPY']['confidence']:.1%}",
+            f"QQQ final: {summaries['QQQ']['final_signal'].upper()} | "
+            f"raw score {summaries['QQQ']['raw_score']:.2f} | "
+            f"confidence {summaries['QQQ']['confidence']:.1%}",
+            f"Combined weighted ETF confirmation: {confirmation['market_signal'].upper()} | "
+            f"aggregate score {confirmation['score']:.2f}",
             f"Persistent regime overlay: {confirmation['persistent_signal'].upper()}",
-            f"Congruent with AMP scraped side ({desired_pos.side.upper() if desired_pos else 'FLAT/NA'}): {amp_align}",
+            f"Congruent with AMP scraped side "
+            f"({desired_pos.side.upper() if desired_pos else 'FLAT/NA'}): {amp_align}",
             f"Top system: {best_row.system} | Nearest order: {best_row.nearest_order}",
         ],
         final_color,
@@ -1196,7 +1313,12 @@ def main():
     elif desired_pos and desired_pos.side == "short" and confirmation["market_signal"] == "bearish":
         print(RED + BOLD + "ACTION BIAS: SELL / SHORT SWING SETUP CONFIRMED" + RESET)
     else:
-        print(YELLOW + BOLD + "ACTION BIAS: MIXED / NO STRONG CONFIRMATION or AMP FLAT" + RESET)
+        print(
+            YELLOW
+            + BOLD
+            + "ACTION BIAS: MIXED / NO STRONG CONFIRMATION or AMP FLAT"
+            + RESET
+        )
 
     if apikey and systemid_raw:
         try:

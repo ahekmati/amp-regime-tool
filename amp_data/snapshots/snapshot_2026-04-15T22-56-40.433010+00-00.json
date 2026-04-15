@@ -1,0 +1,102 @@
+[
+  {
+    "row_id": "b4a16812d59fbdc4",
+    "rank": 1,
+    "system": "Position Gan_v.22 _ E-mini Nasdaq NQ",
+    "product": "NQ",
+    "developer": "AutoTradingBot",
+    "pnl": 475.0,
+    "current_position": "Long 1 @ 25215.75",
+    "nearest_order": "Sell STP 1 @ 26172.25"
+  },
+  {
+    "row_id": "63741ca1cd626891",
+    "rank": 2,
+    "system": "FASSONERIA 3.0",
+    "product": "NQ",
+    "developer": "KORIAL SYSTEMS",
+    "pnl": 475.0,
+    "current_position": "Long 1 @ 26366.50",
+    "nearest_order": "Sell STP 1 @ 26266.50"
+  },
+  {
+    "row_id": "6b77d2cddd91a74a",
+    "rank": 3,
+    "system": "FASSONERIA 4.0",
+    "product": "NQ",
+    "developer": "KORIAL SYSTEMS",
+    "pnl": 475.0,
+    "current_position": "Long 1 @ 26366.50",
+    "nearest_order": "Sell STP 1 @ 26266.50"
+  },
+  {
+    "row_id": "3515a5a61463c0d0",
+    "rank": 4,
+    "system": "ALGOsigmaX E-mini S&P ES",
+    "product": "ES",
+    "developer": "Victor Semenchuk",
+    "pnl": 212.5,
+    "current_position": "Long 1 @ 6807.50",
+    "nearest_order": "Sell STP 1 @ 6972.75"
+  },
+  {
+    "row_id": "b698b9c1badd68c2",
+    "rank": 5,
+    "system": "Ignis E-mini S&P 30'",
+    "product": "ES",
+    "developer": "0MG SYST3MS",
+    "pnl": 130.0,
+    "current_position": "Long 1 @ 7062",
+    "nearest_order": "Sell LMT 1 @ 7071.75"
+  },
+  {
+    "row_id": "9b9110632d8be1d4",
+    "rank": 6,
+    "system": "-",
+    "product": "-",
+    "developer": "-",
+    "pnl": null,
+    "current_position": "-",
+    "nearest_order": "-"
+  },
+  {
+    "row_id": "9b9110632d8be1d4",
+    "rank": 7,
+    "system": "-",
+    "product": "-",
+    "developer": "-",
+    "pnl": null,
+    "current_position": "-",
+    "nearest_order": "-"
+  },
+  {
+    "row_id": "9b9110632d8be1d4",
+    "rank": 8,
+    "system": "-",
+    "product": "-",
+    "developer": "-",
+    "pnl": null,
+    "current_position": "-",
+    "nearest_order": "-"
+  },
+  {
+    "row_id": "9b9110632d8be1d4",
+    "rank": 9,
+    "system": "-",
+    "product": "-",
+    "developer": "-",
+    "pnl": null,
+    "current_position": "-",
+    "nearest_order": "-"
+  },
+  {
+    "row_id": "9b9110632d8be1d4",
+    "rank": 10,
+    "system": "-",
+    "product": "-",
+    "developer": "-",
+    "pnl": null,
+    "current_position": "-",
+    "nearest_order": "-"
+  }
+]

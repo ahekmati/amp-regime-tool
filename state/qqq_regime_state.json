@@ -1,0 +1,11 @@
+{
+  "armed_on_utc": "2026-04-15T20:09:34.537890",
+  "current_regime": "bullish",
+  "last_seen_transition": "bullish_to_bullish",
+  "last_seen_transition_date": "2026-04-15",
+  "last_processed_transition": null,
+  "last_processed_transition_date": null,
+  "last_run_utc": "2026-04-15T22:46:41.612213+00:00",
+  "last_close": 637.4000244140625,
+  "last_score": 8.6
+}
