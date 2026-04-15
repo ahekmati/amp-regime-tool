@@ -3,6 +3,7 @@ import csv
 import json
 import os
 import re
+import time
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone, date
@@ -14,12 +15,12 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 try:
     import yfinance as yf
 except Exception:
-    raise RuntimeError('Missing dependency: yfinance. Install with: pip install yfinance')
+    raise RuntimeError("Missing dependency: yfinance. Install with: pip install yfinance")
 
 try:
     from sklearn.linear_model import LogisticRegression
@@ -28,7 +29,7 @@ try:
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
 except Exception:
-    raise RuntimeError('Missing scikit-learn. Install with: pip install scikit-learn')
+    raise RuntimeError("Missing scikit-learn. Install with: pip install scikit-learn")
 
 try:
     from hmmlearn.hmm import GaussianHMM
@@ -42,6 +43,7 @@ try:
 except Exception:
     MARKOV_AVAILABLE = False
 
+
 # ---------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------
@@ -53,25 +55,39 @@ TOP_N = int(os.getenv("TOP_N", "10"))
 LOOKBACK_YEARS = int(os.getenv("LOOKBACK_YEARS", "8"))
 MC_SIMS = int(os.getenv("MC_SIMS", "6000"))
 PERSISTENCE_DAYS = int(os.getenv("PERSISTENCE_DAYS", "3"))
-
-AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").lower() == "true"
-DRY_RUN = os.getenv("DRY_RUN", "1") == "1"
 AGREEMENT_THRESHOLD = float(os.getenv("AGREEMENT_THRESHOLD", "0.75"))
+
+AUTO_TRADE_ENABLED = os.getenv("AUTO_TRADE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+DRY_RUN = os.getenv("DRY_RUN", "1").strip() == "1"
 
 HISTORY_DIR = Path(os.getenv("HISTORY_DIR", "./history"))
 HISTORY_FILE = HISTORY_DIR / "regime_runs.csv"
 
-MES_SYMBOL = "@MESM6"
-MNQ_SYMBOL = "@MNQM6"
+MES_SYMBOL = os.getenv("MES_SYMBOL", "@MESM6")
+MNQ_SYMBOL = os.getenv("MNQ_SYMBOL", "@MNQM6")
 SUPPORTED_PRODUCTS = {"ES": MES_SYMBOL, "NQ": MNQ_SYMBOL}
 ETF_MAP = {"ES": "SPY", "NQ": "QQQ"}
+
+MES_STOP_POINTS = float(os.getenv("MES_STOP_POINTS", "80"))
+MES_TARGET_POINTS = float(os.getenv("MES_TARGET_POINTS", "160"))
+MNQ_STOP_POINTS = float(os.getenv("MNQ_STOP_POINTS", "180"))
+MNQ_TARGET_POINTS = float(os.getenv("MNQ_TARGET_POINTS", "900"))
 
 RISK_ON_SET = ["SPY", "QQQ", "IWM", "HYG"]
 RISK_OFF_SET = ["TLT", "GLD"]
 STRESS_SET = ["VIXY"]
 ALL_TICKERS = list(dict.fromkeys(RISK_ON_SET + RISK_OFF_SET + STRESS_SET))
 
-# ANSI colors
+ETF_FALLBACKS = {
+    "SPY": ["SPY", "IVV", "VOO"],
+    "QQQ": ["QQQ", "QQQM"],
+    "IWM": ["IWM"],
+    "HYG": ["HYG", "JNK"],
+    "TLT": ["TLT", "IEF"],
+    "GLD": ["GLD", "IAU"],
+    "VIXY": ["VIXY", "UVXY"],
+}
+
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -102,6 +118,9 @@ MODEL_WEIGHTS = {
     "Extension Filter": 0.7,
 }
 
+summaries_global: Dict[str, Dict[str, Any]] = {}
+
+
 # ---------------------------------------------------------------------
 # DATA CLASSES
 # ---------------------------------------------------------------------
@@ -115,10 +134,12 @@ class ScrapedRow:
     nearest_order: str
     developer: str = ""
 
+
 @dataclass
 class ParsedPosition:
     side: str
     qty: int
+
 
 @dataclass
 class OpenPosition:
@@ -128,8 +149,9 @@ class OpenPosition:
     entry_price: Optional[float]
     raw: dict
 
+
 # ---------------------------------------------------------------------
-# UTILS & PRINT HELPERS
+# UTILS
 # ---------------------------------------------------------------------
 def color_for_signal(signal: str) -> str:
     s = signal.lower()
@@ -139,13 +161,16 @@ def color_for_signal(signal: str) -> str:
         return RED
     return YELLOW
 
+
 def print_block(title: str, lines: List[str], color: str = GREEN):
     print(color + BOLD + f"\n{title}" + RESET)
     for line in lines:
         print(color + line + RESET)
 
+
 def add_analysis(results: List[Dict[str, Any]], name: str, signal: str, value: Any, note: str):
     results.append({"analysis": name, "signal": signal, "value": value, "note": note})
+
 
 def days_since(date_str: str) -> Optional[int]:
     if not date_str:
@@ -156,14 +181,15 @@ def days_since(date_str: str) -> Optional[int]:
     except Exception:
         return None
 
-def compute_agreement(summary: dict) -> Tuple[float, str]:
-    raw_score = summary["raw_score"]
-    max_score = sum(abs(w) for w in MODEL_WEIGHTS.values())
-    if max_score <= 0:
-        return 0.0, "neutral"
-    pct = raw_score / max_score
-    direction = "bullish" if pct >= 0 else "bearish"
-    return abs(pct), direction
+
+def to_float_safe(v: Any) -> Optional[float]:
+    try:
+        if v is None or v == "":
+            return None
+        return float(v)
+    except Exception:
+        return None
+
 
 # ---------------------------------------------------------------------
 # AMP SCRAPER
@@ -179,12 +205,14 @@ def fetch_amp_html() -> str:
     r.raise_for_status()
     return r.text
 
+
 def money_to_float(s: str) -> Optional[float]:
     s = s.replace("$", "").replace(",", "").strip()
     try:
         return float(s)
     except Exception:
         return None
+
 
 def parse_current_session(html: str) -> List[ScrapedRow]:
     soup = BeautifulSoup(html, "html.parser")
@@ -237,6 +265,7 @@ def parse_current_session(html: str) -> List[ScrapedRow]:
         )
     return rows
 
+
 def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
     supported = [r for r in rows if r.product in SUPPORTED_PRODUCTS]
     if not supported:
@@ -244,17 +273,17 @@ def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
     supported.sort(key=lambda x: (x.rank, -x.pnl))
     return supported[0]
 
+
 def parse_direction_and_size(text: str) -> Optional[ParsedPosition]:
     text = text.strip()
-    # Treat flat / empty as no position
     if text in {"", "--", "-", "Flat", "FLAT", "flat"}:
         return None
 
     m = re.match(r"^(Long|Short)\s+(\d+)\s*@", text, flags=re.I)
     if not m:
         return None
-
     return ParsedPosition(side=m.group(1).lower(), qty=int(m.group(2)))
+
 
 # ---------------------------------------------------------------------
 # C2 API
@@ -266,6 +295,7 @@ def api4_get(path: str, apikey: str, params: Dict[str, Any]) -> dict:
     r.raise_for_status()
     return r.json()
 
+
 def api4_post(path: str, apikey: str, payload: dict) -> dict:
     url = f"{C2_API4_BASE}{path}"
     headers = {"Authorization": f"Bearer {apikey}", "Content-Type": "application/json"}
@@ -273,8 +303,10 @@ def api4_post(path: str, apikey: str, payload: dict) -> dict:
     r.raise_for_status()
     return r.json()
 
+
 def get_open_positions(apikey: str, strategy_id: int) -> dict:
     return api4_get("/Strategies/GetStrategyOpenPositions", apikey, {"StrategyIds": str(strategy_id)})
+
 
 def extract_supported_open_positions(open_positions: dict) -> List[OpenPosition]:
     results = open_positions.get("Results", [])
@@ -291,41 +323,142 @@ def extract_supported_open_positions(open_positions: dict) -> List[OpenPosition]
 
         side = "long" if qty > 0 else "short"
         entry_price = p.get("AvgPx") or p.get("AvgEntryPrice") or p.get("EntryPrice")
-        extracted.append(OpenPosition(symbol=sym, side=side, qty=abs(int(qty)), entry_price=entry_price, raw=p))
+        extracted.append(
+            OpenPosition(
+                symbol=sym,
+                side=side,
+                qty=abs(int(qty)),
+                entry_price=to_float_safe(entry_price),
+                raw=p)
+        )
 
     return extracted
 
-def build_market_order(strategy_id: int, symbol: str, side: str, qty: int) -> dict:
-    side_code = "1" if side == "long" else "2"
+
+def get_bracket_distances_for_product(product: str) -> tuple[float, float]:
+    if product == "ES":
+        return MES_STOP_POINTS, MES_TARGET_POINTS
+    if product == "NQ":
+        return MNQ_STOP_POINTS, MNQ_TARGET_POINTS
+    raise ValueError(f"Unsupported product: {product}")
+
+
+def build_parent_order_with_bracket(
+    strategy_id: int,
+    full_symbol: str,
+    side: str,
+    qty: int,
+    stop_loss: float,
+    profit_target: float,
+) -> dict:
+    c2_side = "1" if side == "long" else "2"
     return {
         "Order": {
             "StrategyId": strategy_id,
             "OrderType": "1",
-            "Side": side_code,
-            "OrderQuantity": qty,
+            "Side": c2_side,
+            "OrderQuantity": int(qty),
             "TIF": "0",
+            "StopLoss": float(stop_loss),
+            "ProfitTarget": float(profit_target),
             "C2Symbol": {
-                "FullSymbol": symbol,
+                "FullSymbol": full_symbol,
                 "SymbolType": "future"
             }
         }
     }
 
+
 def build_close_order(strategy_id: int, open_pos: OpenPosition) -> dict:
-    close_side = "short" if open_pos.side == "long" else "long"
-    return build_market_order(strategy_id, open_pos.symbol, close_side, open_pos.qty)
+    close_side_code = "2" if open_pos.side == "long" else "1"
+    return {
+        "Order": {
+            "StrategyId": strategy_id,
+            "OrderType": "1",
+            "Side": close_side_code,
+            "OpenClose": "C",
+            "OrderQuantity": int(open_pos.qty),
+            "TIF": "0",
+            "C2Symbol": {
+                "FullSymbol": open_pos.symbol,
+                "SymbolType": "future"
+            }
+        }
+    }
+
 
 # ---------------------------------------------------------------------
-# MARKET DATA & FEATURE ENGINEERING
+# MARKET DATA
 # ---------------------------------------------------------------------
-def download_market_data(ticker: str, years: int = LOOKBACK_YEARS) -> pd.DataFrame:
-    df = yf.download(ticker, period=f"{years}y", interval="1d", auto_adjust=True, progress=False)
+def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
-        raise RuntimeError(f"No data downloaded for {ticker}")
+        return pd.DataFrame()
+
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] for c in df.columns]
-    return df[["Open", "High", "Low", "Close", "Volume"]].dropna().copy()
 
+    required = ["Open", "High", "Low", "Close", "Volume"]
+    if not all(col in df.columns for col in required):
+        return pd.DataFrame()
+
+    out = df[required].copy().dropna()
+    return out
+
+
+def _try_download(symbol: str, years: int) -> pd.DataFrame:
+    df = yf.download(
+        symbol,
+        period=f"{years}y",
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+        threads=False,
+    )
+    return _normalize_ohlcv(df)
+
+
+def _try_history(symbol: str, years: int) -> pd.DataFrame:
+    df = yf.Ticker(symbol).history(
+        period=f"{years}y",
+        interval="1d",
+        auto_adjust=True,
+    )
+    return _normalize_ohlcv(df)
+
+
+def download_market_data(ticker: str, years: int = LOOKBACK_YEARS) -> pd.DataFrame:
+    candidates = ETF_FALLBACKS.get(ticker, [ticker])
+    last_error = None
+
+    for candidate in candidates:
+        for _ in range(3):
+            try:
+                df = _try_download(candidate, years)
+                if not df.empty:
+                    if candidate != ticker:
+                        print(YELLOW + f"Market data fallback used for {ticker}: {candidate}" + RESET)
+                    return df
+            except Exception as e:
+                last_error = e
+            time.sleep(1)
+
+        for _ in range(2):
+            try:
+                df = _try_history(candidate, years)
+                if not df.empty:
+                    if candidate != ticker:
+                        print(YELLOW + f"Market data fallback used for {ticker}: {candidate}" + RESET)
+                    return df
+            except Exception as e:
+                last_error = e
+            time.sleep(1)
+
+    raise RuntimeError(f"No data downloaded for {ticker}. Last error: {last_error}")
+
+
+# ---------------------------------------------------------------------
+# FEATURE ENGINEERING
+# ---------------------------------------------------------------------
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
     d["ret_1d"] = d["Close"].pct_change()
@@ -373,6 +506,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     d["target_21d_up"] = (d["Close"].shift(-21) / d["Close"] - 1 > 0).astype(int)
     return d
 
+
 # ---------------------------------------------------------------------
 # REGIME MODELS / SIGNALS
 # ---------------------------------------------------------------------
@@ -389,6 +523,7 @@ def classify_cluster_regime(cluster_df: pd.DataFrame, label_col: str) -> Dict[in
         else:
             regime_map[idx] = "neutral"
     return regime_map
+
 
 def hmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     if not HMM_AVAILABLE:
@@ -418,6 +553,7 @@ def hmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     conf = float(np.max(probs[-1]))
     return mapping.get(current_state, "neutral"), f"state={current_state}, conf={conf:.3f}", conf
 
+
 def markov_switch_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     if not MARKOV_AVAILABLE:
         return "neutral", "statsmodels not installed", 0.0
@@ -425,7 +561,7 @@ def markov_switch_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     if len(series) < 300:
         return "neutral", "insufficient data", 0.0
     try:
-        model = sm.tsa.MarkovRegression(series, k_regimes=2, trend='c', switching_variance=True)
+        model = sm.tsa.MarkovRegression(series, k_regimes=2, trend="c", switching_variance=True)
         res = model.fit(disp=False)
         probs = res.filtered_marginal_probabilities
         means = []
@@ -439,6 +575,7 @@ def markov_switch_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
         return signal, f"bull_prob={bull_prob:.3f}", conf
     except Exception as e:
         return "neutral", f"fit_failed={str(e)[:80]}", 0.0
+
 
 def gmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     cols = ["ret_21d", "ret_63d", "vol_21", "dist_sma200", "rsi_14"]
@@ -456,6 +593,7 @@ def gmm_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     regime_map = classify_cluster_regime(tmp.assign(ret_63d=feat["ret_63d"], vol_21=feat["vol_21"]), "label")
     cur = int(labels[-1])
     return regime_map.get(cur, "neutral"), f"cluster={cur}, conf={np.max(probs[-1]):.3f}", float(np.max(probs[-1]))
+
 
 def kmeans_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     cols = ["ret_21d", "ret_63d", "vol_21", "dist_sma50", "dist_sma200", "rsi_14"]
@@ -476,25 +614,27 @@ def kmeans_regime_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
     regime_map = classify_cluster_regime(tmp.assign(ret_63d=feat["ret_63d"], vol_21=feat["vol_21"]), "label")
     return regime_map.get(cur_label, "neutral"), f"cluster={cur_label}, conf={conf:.3f}", conf
 
+
 def logistic_21d_signal(d: pd.DataFrame) -> Tuple[str, str, float]:
-    cols = ["ret_5d","ret_21d","ret_63d","ret_126d","dist_sma200","sma50_sma200","rsi_14","macd","macd_signal","vol_21"]
-    x = d[cols].replace([np.inf,-np.inf], np.nan).dropna()
+    cols = ["ret_5d", "ret_21d", "ret_63d", "ret_126d", "dist_sma200", "sma50_sma200", "rsi_14", "macd", "macd_signal", "vol_21"]
+    x = d[cols].replace([np.inf, -np.inf], np.nan).dropna()
     y = d.loc[x.index, "target_21d_up"]
     if len(x) < 400:
         return "neutral", "insufficient data", 0.0
     split = int(len(x) * 0.8)
     model = LogisticRegression(max_iter=2000)
     model.fit(x.iloc[:split], y.iloc[:split])
-    prob = float(model.predict_proba(x.iloc[[-1]])[0,1])
+    prob = float(model.predict_proba(x.iloc[[-1]])[0, 1])
     signal = "bullish" if prob >= 0.55 else "bearish" if prob <= 0.45 else "neutral"
     conf = abs(prob - 0.5) * 2
     return signal, f"p_up_21d={prob:.3f}", conf
 
+
 def random_forest_risk_signal(d: pd.DataFrame) -> Tuple[str, str, float, Dict[str, float]]:
     future_dd = (d["Close"].rolling(21).min().shift(-21) / d["Close"] - 1)
     risk_label = (future_dd <= -0.05).astype(int)
-    cols = ["ret_5d","ret_21d","ret_63d","dist_sma50","dist_sma200","rsi_14","macd","vol_21","vol_63","atr_14","range_pct","volume_z"]
-    x = d[cols].replace([np.inf,-np.inf], np.nan).dropna()
+    cols = ["ret_5d", "ret_21d", "ret_63d", "dist_sma50", "dist_sma200", "rsi_14", "macd", "vol_21", "vol_63", "atr_14", "range_pct", "volume_z"]
+    x = d[cols].replace([np.inf, -np.inf], np.nan).dropna()
     y = risk_label.loc[x.index]
     valid = y.notna()
     x, y = x.loc[valid], y.loc[valid]
@@ -506,15 +646,16 @@ def random_forest_risk_signal(d: pd.DataFrame) -> Tuple[str, str, float, Dict[st
         max_depth=6,
         min_samples_leaf=5,
         random_state=42,
-        class_weight='balanced_subsample'
+        class_weight="balanced_subsample"
     )
     model.fit(x.iloc[:split], y.iloc[:split])
-    p_risk = float(model.predict_proba(x.iloc[[-1]])[0,1])
+    p_risk = float(model.predict_proba(x.iloc[[-1]])[0, 1])
     signal = "bearish" if p_risk >= 0.55 else "bullish" if p_risk <= 0.35 else "neutral"
     importances = pd.Series(model.feature_importances_, index=cols).sort_values(ascending=False).head(4)
     top_imp = {k: round(float(v), 4) for k, v in importances.items()}
     conf = abs(p_risk - 0.5) * 2
     return signal, f"crash_risk_21d={p_risk:.3f}", conf, top_imp
+
 
 def monte_carlo_signal(d: pd.DataFrame, horizon: int = 63, sims: int = MC_SIMS) -> Tuple[str, str, float]:
     rets = d["ret_1d"].dropna().tail(252 * 3)
@@ -529,6 +670,7 @@ def monte_carlo_signal(d: pd.DataFrame, horizon: int = 63, sims: int = MC_SIMS) 
     signal = "bullish" if prob_up >= 0.56 and median_ret > 0 else "bearish" if prob_up <= 0.44 and median_ret < 0 else "neutral"
     conf = abs(prob_up - 0.5) * 2
     return signal, f"p_up_63d={prob_up:.3f}, med={median_ret:.3%}", conf
+
 
 # ---------------------------------------------------------------------
 # COMPOSITE TECHNICALS
@@ -564,6 +706,7 @@ def technical_signals(d: pd.DataFrame) -> List[Dict[str, Any]]:
         round(vm, 3), "Momentum divided by annualized vol")
     return results
 
+
 def extension_filter(d: pd.DataFrame) -> Tuple[str, str]:
     last = d.dropna().iloc[-1]
     overextended_up = last["rsi_14"] >= 72 and last["dist_sma50"] >= 0.045
@@ -573,6 +716,7 @@ def extension_filter(d: pd.DataFrame) -> Tuple[str, str]:
     if overextended_dn:
         return "neutral", f"bearish trend but stretched down (RSI={last['rsi_14']:.1f}, dist50={last['dist_sma50']:.2%})"
     return ("bullish" if last["Close"] > last["sma_50"] else "bearish"), "extension filter clear"
+
 
 def cross_asset_signals(market: Dict[str, pd.DataFrame]) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
@@ -600,8 +744,9 @@ def cross_asset_signals(market: Dict[str, pd.DataFrame]) -> List[Dict[str, Any]]
                  "TLT/GLD and VIXY stress overlay")
     return results
 
+
 # ---------------------------------------------------------------------
-# COMPOSITE SCORE & REGIME CHANGE
+# COMPOSITE SCORE / REGIME CHANGE
 # ---------------------------------------------------------------------
 def weighted_score(df: pd.DataFrame) -> Tuple[float, float, str]:
     score = 0.0
@@ -616,6 +761,7 @@ def weighted_score(df: pd.DataFrame) -> Tuple[float, float, str]:
     conf = abs(score) / max(max_score, 1e-9)
     final = "bullish" if score >= 2.5 else "bearish" if score <= -2.5 else "neutral"
     return score, conf, final
+
 
 def compute_historical_composite_regime(d: pd.DataFrame) -> Tuple[Optional[pd.Timestamp], Optional[float]]:
     d = d.dropna().copy()
@@ -675,8 +821,9 @@ def compute_historical_composite_regime(d: pd.DataFrame) -> Tuple[Optional[pd.Ti
     first_idx = d.index[0]
     return first_idx, float(d.loc[first_idx, "Close"])
 
+
 # ---------------------------------------------------------------------
-# PERSISTENCE FILTER / HISTORY LOGGING
+# PERSISTENCE / LOGGING
 # ---------------------------------------------------------------------
 def load_recent_history(ticker: str) -> pd.DataFrame:
     if not HISTORY_FILE.exists():
@@ -686,6 +833,7 @@ def load_recent_history(ticker: str) -> pd.DataFrame:
         return df[df["ticker"] == ticker].tail(PERSISTENCE_DAYS - 1)
     except Exception:
         return pd.DataFrame()
+
 
 def persistence_filter(ticker: str, raw_signal: str) -> Tuple[str, str]:
     if PERSISTENCE_DAYS <= 1:
@@ -699,6 +847,7 @@ def persistence_filter(ticker: str, raw_signal: str) -> Tuple[str, str]:
     if raw_signal == "neutral":
         return "neutral", "current signal neutral"
     return "neutral", f"awaiting persistence confirmation; prior={prior}"
+
 
 def atr_risk_text(product: str, open_positions: List[OpenPosition], amp_stop_text: str, ticker_df: pd.DataFrame) -> List[str]:
     d = engineer_features(ticker_df).dropna()
@@ -714,6 +863,7 @@ def atr_risk_text(product: str, open_positions: List[OpenPosition], amp_stop_tex
             lines.append(f"Live C2 position: {p.symbol} {p.side.upper()} x {p.qty} @ {p.entry_price}")
     return lines
 
+
 def save_run(rows: List[Dict[str, Any]]):
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     file_exists = HISTORY_FILE.exists()
@@ -723,8 +873,9 @@ def save_run(rows: List[Dict[str, Any]]):
             writer.writeheader()
         writer.writerows(rows)
 
+
 # ---------------------------------------------------------------------
-# FULL ANALYSIS FOR ONE TICKER
+# ANALYSIS SUITE
 # ---------------------------------------------------------------------
 def analysis_suite(ticker: str, df: pd.DataFrame, cross_asset_rows: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, float]]:
     d = engineer_features(df)
@@ -792,9 +943,7 @@ def analysis_suite(ticker: str, df: pd.DataFrame, cross_asset_rows: List[Dict[st
     }
     return out, summary, rf_top
 
-# ---------------------------------------------------------------------
-# COMBINED MARKET CONFIRMATION
-# ---------------------------------------------------------------------
+
 def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: Optional[str]) -> Dict[str, Any]:
     score = spy_summary["raw_score"] + qqq_summary["raw_score"]
     combined = "bullish" if score >= 4 else "bearish" if score <= -4 else "neutral"
@@ -818,10 +967,98 @@ def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: 
         "score": score,
     }
 
+
+# ---------------------------------------------------------------------
+# TRADE EXECUTION
+# ---------------------------------------------------------------------
+def maybe_execute_trade(
+    apikey: str,
+    strategy_id: int,
+    best_row: ScrapedRow,
+    desired_pos: Optional[ParsedPosition],
+    confirmation: Dict[str, Any],
+    current_positions: List[OpenPosition],
+) -> None:
+    if not desired_pos:
+        print(YELLOW + "AUTO-TRADE: AMP is flat for the top system. No trade sent." + RESET)
+        return
+
+    if not AUTO_TRADE_ENABLED:
+        print(YELLOW + "AUTO-TRADE: disabled." + RESET)
+        return
+
+    product = best_row.product.upper()
+    if product not in SUPPORTED_PRODUCTS:
+        print(RED + f"AUTO-TRADE: unsupported product {product}. No trade sent." + RESET)
+        return
+
+    if desired_pos.side == "long" and confirmation["market_signal"] != "bullish":
+        print(YELLOW + "AUTO-TRADE: long signal not confirmed by market regime. No trade sent." + RESET)
+        return
+    if desired_pos.side == "short" and confirmation["market_signal"] != "bearish":
+        print(YELLOW + "AUTO-TRADE: short signal not confirmed by market regime. No trade sent." + RESET)
+        return
+
+    if confirmation["persistent_signal"] != confirmation["market_signal"]:
+        print(YELLOW + "AUTO-TRADE: persistent overlay not aligned with current market signal. No trade sent." + RESET)
+        return
+
+    spy_conf = summaries_global["SPY"]["confidence"]
+    qqq_conf = summaries_global["QQQ"]["confidence"]
+    min_conf = min(spy_conf, qqq_conf)
+    if min_conf < AGREEMENT_THRESHOLD:
+        print(YELLOW + f"AUTO-TRADE: confidence gate failed ({min_conf:.1%} < {AGREEMENT_THRESHOLD:.1%}). No trade sent." + RESET)
+        return
+
+    target_symbol = SUPPORTED_PRODUCTS[product]
+    existing = [p for p in current_positions if p.symbol == target_symbol]
+
+    if existing:
+        cur = existing[0]
+        if cur.side == desired_pos.side and cur.qty == desired_pos.qty:
+            print(YELLOW + f"AUTO-TRADE: already in desired position {cur.symbol} {cur.side} x {cur.qty}. No new order sent." + RESET)
+            return
+
+        print(YELLOW + f"AUTO-TRADE: existing position differs ({cur.symbol} {cur.side} x {cur.qty}). Sending close order first." + RESET)
+        close_payload = build_close_order(strategy_id, cur)
+        print("Close payload:", json.dumps(close_payload, ensure_ascii=False))
+
+        if DRY_RUN:
+            print(YELLOW + "DRY_RUN=1 -> close order not sent." + RESET)
+            return
+
+        result = api4_post("/Strategies/NewStrategyOrder", apikey, close_payload)
+        print("Close result:", json.dumps(result, ensure_ascii=False))
+        print(YELLOW + "AUTO-TRADE: position close sent. Re-run after C2 position updates before opening the new bracketed trade." + RESET)
+        return
+
+    stop_points, target_points = get_bracket_distances_for_product(product)
+    parent_payload = build_parent_order_with_bracket(
+        strategy_id=strategy_id,
+        full_symbol=target_symbol,
+        side=desired_pos.side,
+        qty=desired_pos.qty,
+        stop_loss=stop_points,
+        profit_target=target_points,
+    )
+
+    print("Bracketed entry payload:", json.dumps(parent_payload, ensure_ascii=False))
+
+    if DRY_RUN:
+        print(YELLOW + "DRY_RUN=1 -> bracketed parent order not sent." + RESET)
+        return
+
+    result = api4_post("/Strategies/NewStrategyOrder", apikey, parent_payload)
+    print("Bracketed entry result:", json.dumps(result, ensure_ascii=False))
+    print(GREEN + "AUTO-TRADE: bracketed entry order submitted." + RESET)
+
+
 # ---------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------
 def main():
+    global summaries_global
+
     apikey = os.getenv("C2_API_KEY", "").strip()
     systemid_raw = os.getenv("C2_SYSTEM_ID", "").strip()
     now = datetime.now(timezone.utc).isoformat()
@@ -837,6 +1074,7 @@ def main():
     rows = parse_current_session(html)
     if not rows:
         raise RuntimeError("No rows parsed from AMP current session table")
+
     best_row = pick_best_supported(rows)
     if not best_row:
         raise RuntimeError("No ES or NQ strategy found in top rows")
@@ -855,9 +1093,12 @@ def main():
             open_pos_raw = get_open_positions(apikey, int(systemid_raw))
             current_positions = extract_supported_open_positions(open_pos_raw)
         except Exception as e:
-            print(f"Could not fetch C2 open positions: {e}")
+            print(YELLOW + f"Could not fetch C2 open positions: {e}" + RESET)
 
-    market_data = {ticker: download_market_data(ticker) for ticker in ALL_TICKERS}
+    market_data = {}
+    for ticker in ALL_TICKERS:
+        market_data[ticker] = download_market_data(ticker)
+
     cross_asset_rows = cross_asset_signals(market_data)
 
     tables = {}
@@ -870,7 +1111,9 @@ def main():
         summaries[ticker] = summary
         rf_features[ticker] = rf_top
 
+    summaries_global = summaries
     confirmation = combine_market_confirmation(summaries["SPY"], summaries["QQQ"], desired_pos.side if desired_pos else None)
+
     traded_etf = ETF_MAP.get(best_row.product, "QQQ")
 
     print_block(
@@ -955,81 +1198,20 @@ def main():
     else:
         print(YELLOW + BOLD + "ACTION BIAS: MIXED / NO STRONG CONFIRMATION or AMP FLAT" + RESET)
 
-    # -----------------------------------------------------------------
-    # AUTO-TRADE TO C2
-    # -----------------------------------------------------------------
-    if not desired_pos:
-        print(YELLOW + "AUTO-TRADE: AMP is flat for the top system. No trade sent." + RESET)
-    elif AUTO_TRADE_ENABLED:
-        if not apikey or not systemid_raw:
-            print(RED + "AUTO-TRADE: missing C2_API_KEY or C2_SYSTEM_ID. No orders sent." + RESET)
-        else:
-            systemid = int(systemid_raw)
-            etf_summary = summaries[traded_etf]
-            agreement_pct, agreement_direction = compute_agreement(etf_summary)
-
-            print_block(
-                "AUTO-TRADE CHECK",
-                [
-                    f"ETF used for gate: {traded_etf}",
-                    f"Agreement: {agreement_pct:.1%}",
-                    f"Agreement direction: {agreement_direction.upper()}",
-                    f"AMP side: {desired_pos.side.upper()}",
-                    f"Threshold required: {AGREEMENT_THRESHOLD:.0%}",
-                ],
-                BLUE,
+    if apikey and systemid_raw:
+        try:
+            maybe_execute_trade(
+                apikey=apikey,
+                strategy_id=int(systemid_raw),
+                best_row=best_row,
+                desired_pos=desired_pos,
+                confirmation=confirmation,
+                current_positions=current_positions,
             )
-
-            aligned = (
-                (desired_pos.side == "long" and agreement_direction == "bullish") or
-                (desired_pos.side == "short" and agreement_direction == "bearish")
-            )
-
-            if not aligned:
-                print(YELLOW + "AUTO-TRADE: regime direction does not align with AMP side. No order sent." + RESET)
-            elif agreement_pct < AGREEMENT_THRESHOLD:
-                print(YELLOW + f"AUTO-TRADE: agreement {agreement_pct:.1%} is below threshold. No order sent." + RESET)
-            elif not confirmation["congruent_with_amp"]:
-                print(YELLOW + "AUTO-TRADE: combined confirmation is not congruent with AMP side. No order sent." + RESET)
-            else:
-                desired_symbol = SUPPORTED_PRODUCTS[best_row.product]
-
-                if len(current_positions) > 1:
-                    print(RED + "AUTO-TRADE: more than one supported open MES/MNQ position detected. Aborting." + RESET)
-                else:
-                    current = current_positions[0] if current_positions else None
-
-                    if current is None:
-                        entry_payload = build_market_order(systemid, desired_symbol, desired_pos.side, desired_pos.qty)
-                        print(BLUE + "Entry payload: " + json.dumps(entry_payload, ensure_ascii=False) + RESET)
-                        if DRY_RUN:
-                            print(YELLOW + "DRY_RUN=1 -> not sending entry order." + RESET)
-                        else:
-                            entry_result = api4_post("/Strategies/NewStrategyOrder", apikey, entry_payload)
-                            print(GREEN + "Entry result: " + json.dumps(entry_result, ensure_ascii=False) + RESET)
-                    else:
-                        same_symbol = current.symbol == desired_symbol
-                        same_side = current.side == desired_pos.side
-                        same_qty = current.qty == desired_pos.qty
-
-                        if same_symbol and same_side and same_qty:
-                            print(GREEN + "AUTO-TRADE: current C2 position already matches confirmed AMP signal. No order sent." + RESET)
-                        else:
-                            close_payload = build_close_order(systemid, current)
-                            entry_payload = build_market_order(systemid, desired_symbol, desired_pos.side, desired_pos.qty)
-
-                            print(BLUE + "Close payload: " + json.dumps(close_payload, ensure_ascii=False) + RESET)
-                            print(BLUE + "New entry payload: " + json.dumps(entry_payload, ensure_ascii=False) + RESET)
-
-                            if DRY_RUN:
-                                print(YELLOW + "DRY_RUN=1 -> not sending close or entry orders." + RESET)
-                            else:
-                                close_result = api4_post("/Strategies/NewStrategyOrder", apikey, close_payload)
-                                print(GREEN + "Close result: " + json.dumps(close_result, ensure_ascii=False) + RESET)
-                                entry_result = api4_post("/Strategies/NewStrategyOrder", apikey, entry_payload)
-                                print(GREEN + "Entry result: " + json.dumps(entry_result, ensure_ascii=False) + RESET)
+        except Exception as e:
+            print(RED + f"AUTO-TRADE ERROR: {e}" + RESET)
     else:
-        print(YELLOW + "AUTO-TRADE DISABLED. Set AUTO_TRADE_ENABLED=true to enable." + RESET)
+        print(YELLOW + "AUTO-TRADE: C2 credentials unavailable." + RESET)
 
     run_rows = []
     for ticker in ["SPY", "QQQ"]:
@@ -1041,6 +1223,7 @@ def main():
                 "amp_system": best_row.system,
                 "amp_product": best_row.product,
                 "amp_side": desired_pos.side if desired_pos else "flat",
+                "amp_qty": desired_pos.qty if desired_pos else 0,
                 "amp_nearest_order": best_row.nearest_order,
                 "raw_final_signal": s["raw_final_signal"],
                 "final_signal": s["final_signal"],
@@ -1053,13 +1236,16 @@ def main():
                 "composite_change_date": s["composite_change_date"],
                 "composite_change_price": s["composite_change_price"],
                 "combined_market_signal": confirmation["market_signal"],
-                "combined_persistent_signal": confirmation["persistent_signal"],
-                "amp_congruent": confirmation["congruent_with_amp"],
+                "persistent_market_signal": confirmation["persistent_signal"],
+                "congruent_with_amp": confirmation["congruent_with_amp"],
+                "auto_trade_enabled": AUTO_TRADE_ENABLED,
+                "dry_run": DRY_RUN,
             }
         )
 
     save_run(run_rows)
     print(BLUE + f"Logged run history to: {HISTORY_FILE}" + RESET)
+
 
 if __name__ == "__main__":
     main()
