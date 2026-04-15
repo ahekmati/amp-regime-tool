@@ -246,11 +246,14 @@ def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
 
 def parse_direction_and_size(text: str) -> Optional[ParsedPosition]:
     text = text.strip()
-    if text in {"", "--", "-"}:
+    # Treat flat / empty as no position
+    if text in {"", "--", "-", "Flat", "FLAT", "flat"}:
         return None
+
     m = re.match(r"^(Long|Short)\s+(\d+)\s*@", text, flags=re.I)
     if not m:
         return None
+
     return ParsedPosition(side=m.group(1).lower(), qty=int(m.group(2)))
 
 # ---------------------------------------------------------------------
@@ -792,7 +795,7 @@ def analysis_suite(ticker: str, df: pd.DataFrame, cross_asset_rows: List[Dict[st
 # ---------------------------------------------------------------------
 # COMBINED MARKET CONFIRMATION
 # ---------------------------------------------------------------------
-def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: str) -> Dict[str, Any]:
+def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: Optional[str]) -> Dict[str, Any]:
     score = spy_summary["raw_score"] + qqq_summary["raw_score"]
     combined = "bullish" if score >= 4 else "bearish" if score <= -4 else "neutral"
 
@@ -804,7 +807,9 @@ def combine_market_confirmation(spy_summary: dict, qqq_summary: dict, amp_side: 
         else "neutral"
     )
 
-    congruent = (amp_side == "long" and combined == "bullish") or (amp_side == "short" and combined == "bearish")
+    congruent = False
+    if amp_side is not None:
+        congruent = (amp_side == "long" and combined == "bullish") or (amp_side == "short" and combined == "bearish")
 
     return {
         "market_signal": combined,
@@ -825,7 +830,7 @@ def main():
     print(
         f"Dependencies: HMM={HMM_AVAILABLE}, Markov={MARKOV_AVAILABLE} "
         f"| Lookback={LOOKBACK_YEARS}y daily | Persistence={PERSISTENCE_DAYS} "
-        f"| AutoTrade={AUTO_TRADE_ENABLED} | DryRun={DRY_RUN} | AgreementThreshold={AGREEMENT_THRESHOLD:.0%}"
+        f"| AutoTrade={AUTO_TRADE_ENABLED} | DryRun={DRY_RUN} | AgreementThreshold={AGREEMENT_THRESHOLD*100:.0f}%"
     )
 
     html = fetch_amp_html()
@@ -835,9 +840,14 @@ def main():
     best_row = pick_best_supported(rows)
     if not best_row:
         raise RuntimeError("No ES or NQ strategy found in top rows")
+
     desired_pos = parse_direction_and_size(best_row.current_position)
     if not desired_pos:
-        raise RuntimeError(f"Current position not parsable: {best_row.current_position}")
+        print(
+            YELLOW + BOLD +
+            f"\nNO NEW SIGNALS: AMP is FLAT for top system ({best_row.system}, product {best_row.product})." +
+            RESET
+        )
 
     current_positions = []
     if apikey and systemid_raw:
@@ -860,7 +870,7 @@ def main():
         summaries[ticker] = summary
         rf_features[ticker] = rf_top
 
-    confirmation = combine_market_confirmation(summaries["SPY"], summaries["QQQ"], desired_pos.side)
+    confirmation = combine_market_confirmation(summaries["SPY"], summaries["QQQ"], desired_pos.side if desired_pos else None)
     traded_etf = ETF_MAP.get(best_row.product, "QQQ")
 
     print_block(
@@ -871,7 +881,7 @@ def main():
             f"Product: {best_row.product}",
             f"Scraped current position: {best_row.current_position}",
             f"Nearest order: {best_row.nearest_order}",
-            f"AMP interpreted side: {desired_pos.side.upper()} x {desired_pos.qty}",
+            f"AMP interpreted side: {desired_pos.side.upper()} x {desired_pos.qty}" if desired_pos else "AMP interpreted side: FLAT / NO ACTIVE SIGNAL",
             f"ETF proxy used for traded product: {traded_etf}",
         ],
         CYAN,
@@ -932,23 +942,25 @@ def main():
             f"QQQ final: {summaries['QQQ']['final_signal'].upper()} | raw score {summaries['QQQ']['raw_score']:.2f} | confidence {summaries['QQQ']['confidence']:.1%}",
             f"Combined weighted ETF confirmation: {confirmation['market_signal'].upper()} | aggregate score {confirmation['score']:.2f}",
             f"Persistent regime overlay: {confirmation['persistent_signal'].upper()}",
-            f"Congruent with AMP scraped side ({desired_pos.side.upper()}): {amp_align}",
+            f"Congruent with AMP scraped side ({desired_pos.side.upper() if desired_pos else 'FLAT/NA'}): {amp_align}",
             f"Top system: {best_row.system} | Nearest order: {best_row.nearest_order}",
         ],
         final_color,
     )
 
-    if desired_pos.side == "long" and confirmation["market_signal"] == "bullish":
+    if desired_pos and desired_pos.side == "long" and confirmation["market_signal"] == "bullish":
         print(GREEN + BOLD + "ACTION BIAS: BUY / LONG SWING SETUP CONFIRMED" + RESET)
-    elif desired_pos.side == "short" and confirmation["market_signal"] == "bearish":
+    elif desired_pos and desired_pos.side == "short" and confirmation["market_signal"] == "bearish":
         print(RED + BOLD + "ACTION BIAS: SELL / SHORT SWING SETUP CONFIRMED" + RESET)
     else:
-        print(YELLOW + BOLD + "ACTION BIAS: MIXED / NO STRONG CONFIRMATION" + RESET)
+        print(YELLOW + BOLD + "ACTION BIAS: MIXED / NO STRONG CONFIRMATION or AMP FLAT" + RESET)
 
     # -----------------------------------------------------------------
     # AUTO-TRADE TO C2
     # -----------------------------------------------------------------
-    if AUTO_TRADE_ENABLED:
+    if not desired_pos:
+        print(YELLOW + "AUTO-TRADE: AMP is flat for the top system. No trade sent." + RESET)
+    elif AUTO_TRADE_ENABLED:
         if not apikey or not systemid_raw:
             print(RED + "AUTO-TRADE: missing C2_API_KEY or C2_SYSTEM_ID. No orders sent." + RESET)
         else:
@@ -1028,7 +1040,7 @@ def main():
                 "ticker": ticker,
                 "amp_system": best_row.system,
                 "amp_product": best_row.product,
-                "amp_side": desired_pos.side,
+                "amp_side": desired_pos.side if desired_pos else "flat",
                 "amp_nearest_order": best_row.nearest_order,
                 "raw_final_signal": s["raw_final_signal"],
                 "final_signal": s["final_signal"],
