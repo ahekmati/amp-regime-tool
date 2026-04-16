@@ -5,3 +5,12 @@ timestamp_utc,alert_type,row_id,system,product,developer,old_rank,new_rank,old_p
 2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,3515a5a61463c0d0,ALGOsigmaX E-mini S&P ES,ES,Victor Semenchuk,,4,,Long 1 @ 6807.50,,Sell STP 1 @ 6972.75,System appeared in tracked top list.
 2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,b698b9c1badd68c2,Ignis E-mini S&P 30',ES,0MG SYST3MS,,5,,Long 1 @ 7062,,Sell LMT 1 @ 7071.75,System appeared in tracked top list.
 2026-04-15T22:56:40.433010+00:00,new_system_in_top_list,9b9110632d8be1d4,-,-,-,,10,,-,,-,System appeared in tracked top list.
+2026-04-16T09:53:24.644328+00:00,position_change,6b77d2cddd91a74a,FASSONERIA 4.0,NQ,KORIAL SYSTEMS,3,2,Long 1 @ 26366.50,Flat,Sell STP 1 @ 26266.50,--,Current position differs from previous snapshot.
+2026-04-16T09:53:24.644328+00:00,position_change,63741ca1cd626891,FASSONERIA 3.0,NQ,KORIAL SYSTEMS,2,3,Long 1 @ 26366.50,Flat,Sell STP 1 @ 26266.50,--,Current position differs from previous snapshot.
+2026-04-16T09:53:24.644328+00:00,new_system_in_top_list,89b83b1783725963,Del Ponte DAX 1,FDXM,KORIAL SYSTEMS,,4,,Flat,,--,System appeared in tracked top list.
+2026-04-16T09:53:24.644328+00:00,new_system_in_top_list,2c8c22117100f8f2,CIRUS ST EUROFX NEBULA,URO,CirusTrading,,6,,Short 1 @ 1.1572,,--,System appeared in tracked top list.
+2026-04-16T09:53:24.644328+00:00,new_system_in_top_list,90f80f4a326ca4b5,Watto Sonic BUND - Extralonses,FGBL,ILernet Trading Systems,,7,,Long 1 @ 125.11,,Sell STP 1 @ 124.71,System appeared in tracked top list.
+2026-04-16T09:53:24.644328+00:00,new_system_in_top_list,ec106baa83c420ea,Watto Corn 3Loops,ZC,ILernet Trading Systems,,8,,Short 1 @ 470,,Buy STP 1 @ 478.75,System appeared in tracked top list.
+2026-04-16T09:53:24.644328+00:00,new_system_in_top_list,2362b79e589a7e3a,ADX,FESX,Marco Bettani,,9,,Long 1 @ 5907,,--,System appeared in tracked top list.
+2026-04-16T15:53:31.213189+00:00,new_system_in_top_list,5efb236c16f2b2bb,Position Trad Cont v.5.2 _ Live Cattle LE,LE,AutoTradingBot,,2,,Long 1 @ 247.95,,Sell STP 1 @ 244.85,System appeared in tracked top list.
+2026-04-16T15:53:31.213189+00:00,new_system_in_top_list,a272c2dd60532de5,Forest Eurostoxx-50 Maredu %pct T.profit & SL,FESX,Forest Trading,,8,,Short 1 @ 5794,,Buy STP 1 @ 5938,System appeared in tracked top list.

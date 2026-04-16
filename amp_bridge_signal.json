@@ -1,0 +1,40 @@
+{
+  "generated_at_utc": "2026-04-16T16:13:20.687029+00:00",
+  "source": "AMP TopStrategies",
+  "signals": {
+    "NQ": {
+      "family": "NQ",
+      "symbol": "MNQM26",
+      "configured_master": "YOUR EXACT NQ SYSTEM NAME",
+      "master_found": false,
+      "target": null,
+      "volume": 1.0,
+      "sl_points": 200.0,
+      "tp_points": 2200.0,
+      "system": null,
+      "product": null,
+      "rank": null,
+      "current_position_raw": null,
+      "nearest_order": null,
+      "row_id": null,
+      "message": "Configured master system not found; do nothing"
+    },
+    "ES": {
+      "family": "ES",
+      "symbol": "MESM26",
+      "configured_master": "YOUR EXACT ES SYSTEM NAME",
+      "master_found": false,
+      "target": null,
+      "volume": 1.0,
+      "sl_points": 80.0,
+      "tp_points": 400.0,
+      "system": null,
+      "product": null,
+      "rank": null,
+      "current_position_raw": null,
+      "nearest_order": null,
+      "row_id": null,
+      "message": "Configured master system not found; do nothing"
+    }
+  }
+}

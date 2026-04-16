@@ -1,0 +1,3 @@
+timestamp_utc,symbol,target,volume,action,success,message,retcode,order,deal,source
+2026-04-16T15:53:31.213189+00:00,MNQM26,,1.0,master_not_found,True,Configured master system not found in scrape; no action taken,,,,NQ
+2026-04-16T15:53:31.213189+00:00,MESM26,,1.0,master_not_found,True,Configured master system not found in scrape; no action taken,,,,ES
