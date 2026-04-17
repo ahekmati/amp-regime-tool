@@ -69,12 +69,24 @@ def print_green(line: str) -> None:
     print(GREEN + line + RESET)
 
 
+def print_green_bold(line: str) -> None:
+    print(GREEN + BOLD + line + RESET)
+
+
 def print_yellow(line: str) -> None:
     print(YELLOW + line + RESET)
 
 
 def print_red(line: str) -> None:
     print(RED + line + RESET)
+
+
+def print_cyan(line: str) -> None:
+    print(CYAN + line + RESET)
+
+
+def normalize_text(x: str) -> str:
+    return re.sub(r"\s+", " ", (x or "").strip())
 
 
 def fetch_amp_html() -> str:
@@ -150,6 +162,82 @@ def parse_current_session(html: str) -> List[ScrapedRow]:
         )
 
     return rows
+
+
+# --- consensus helpers (NQ / ES / YM) ---------------------------------
+
+
+def product_root(product: str, system: str = "") -> Optional[str]:
+    p = normalize_text(product).upper()
+    s = normalize_text(system).upper()
+    combined = f"{p} | {s}"
+
+    if "MICRO" in combined and "NASDAQ" in combined:
+        return "MNQ"
+    if "E-MINI" in combined and "NASDAQ" in combined:
+        return "NQ"
+
+    for root in ("MNQ", "NQ", "MES", "ES", "MYM", "YM"):
+        if root in p or root in s:
+            return root
+
+    if "NASDAQ" in combined:
+        return "NQ"
+    return None
+
+
+def parse_position_text(pos: str) -> str:
+    p = normalize_text(pos).upper()
+
+    if not p:
+        return "unknown"
+
+    if any(x in p for x in ["LONG", "BUY"]):
+        return "long"
+    if any(x in p for x in ["SHORT", "SELL"]):
+        return "short"
+    if any(x in p for x in ["FLAT", "NONE", "EXIT", "CLOSE", "NO POSITION", "SQUARE"]):
+        return "flat"
+
+    if re.search(r"(^|[\s(])L(?:ONG)?([\s@0-9]|$)", p):
+        return "long"
+    if re.search(r"(^|[\s(])S(?:HORT)?([\s@0-9]|$)", p):
+        return "short"
+
+    return "unknown"
+
+
+def count_directional_consensus(rows: List[ScrapedRow]) -> Dict[str, Any]:
+    long_count = 0
+    short_count = 0
+    qualifying_rows: List[str] = []
+
+    for r in rows:
+        root = product_root(r.product, r.system)
+        pos = parse_position_text(r.current_position)
+
+        if root in ("NQ", "MNQ", "ES", "MES", "YM", "MYM"):
+            if pos == "long":
+                long_count += 1
+                qualifying_rows.append(
+                    f"rank #{r.rank} | {root} | LONG | {r.system}"
+                )
+            elif pos == "short":
+                short_count += 1
+                qualifying_rows.append(
+                    f"rank #{r.rank} | {root} | SHORT | {r.system}"
+                )
+
+    return {
+        "long_count": long_count,
+        "short_count": short_count,
+        "max_same_direction": max(long_count, short_count),
+        "qualifying_count": long_count + short_count,
+        "qualifying_rows": qualifying_rows,
+    }
+
+
+# ----------------------------------------------------------------------
 
 
 def pick_best_nq(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
@@ -311,12 +399,42 @@ def main() -> None:
     systemid_raw = os.getenv("C2_SYSTEM_ID", "").strip()
     now = datetime.now(timezone.utc).isoformat()
 
-    print(CYAN + BOLD + f"AMP NQ -> MNQ copier started at {now}" + RESET)
+    print_cyan(BOLD + f"AMP NQ -> MNQ copier started at {now}" + RESET)
+    print_cyan(f"AMP_URL={AMP_URL} | TOP_N={TOP_N} | MNQ_SYMBOL={MNQ_SYMBOL} | DRY_RUN={DRY_RUN}")
 
     html = fetch_amp_html()
+    print_green("Fetched AMP current session page successfully.")
+
     rows = parse_current_session(html)
+    print_green(f"Parsed {len(rows)} rows from AMP table within top {TOP_N} ranks.")
+
     if not rows:
         raise RuntimeError("No rows parsed from AMP current session table")
+
+    # Consensus check across NQ / ES / YM family
+    consensus = count_directional_consensus(rows)
+    print_green_bold("Consensus check across NQ / ES / YM family")
+    print_green(
+        f"Found qualifying directional signals: {consensus['qualifying_count']} "
+        f"(long={consensus['long_count']}, short={consensus['short_count']})"
+    )
+    if consensus["qualifying_rows"]:
+        print_green("Qualifying rows:")
+        for line in consensus["qualifying_rows"]:
+            print_green(f"  {line}")
+    else:
+        print_yellow("No qualifying NQ/ES/YM rows with long/short direction were found.")
+
+    if consensus["max_same_direction"] >= 3:
+        dominant = "LONG" if consensus["long_count"] >= 3 else "SHORT"
+        print_green_bold(
+            f"Consensus PASSED: at least 3 symbols found in the same direction -> {dominant}"
+        )
+    else:
+        print_yellow(
+            "Consensus FAILED: fewer than 3 NQ/ES/YM-family signals are aligned "
+            "in the same direction. No MNQ trade will be sent."
+        )
 
     best_row = pick_best_nq(rows)
     if not best_row:
@@ -324,11 +442,41 @@ def main() -> None:
 
     desired_pos = parse_direction_and_size(best_row.current_position)
 
-    print_green(BOLD + "SCRAPED NQ STRATEGY" + RESET)
+    print_green_bold("SCRAPED NQ STRATEGY")
     print_green(f"Strategy: {best_row.system}")
     print_green(f"Developer: {best_row.developer or 'N/A'}")
+    print_green(f"Rank: {best_row.rank}")
+    print_green(f"Product: {best_row.product}")
     print_green(f"Current position: {best_row.current_position}")
     print_green(f"Nearest order: {best_row.nearest_order}")
+    print_green(f"Parsed target side/qty: {desired_pos.side if desired_pos else 'N/A'} "
+                f"{desired_pos.qty if desired_pos else ''}")
+
+    # Early exit conditions
+    if consensus["max_same_direction"] < 3:
+        log_event(
+            {
+                "timestamp_utc": now,
+                "strategy_name": best_row.system,
+                "developer": best_row.developer,
+                "rank": best_row.rank,
+                "product": best_row.product,
+                "scraped_current_position": best_row.current_position,
+                "scraped_nearest_order": best_row.nearest_order,
+                "desired_side": desired_pos.side if desired_pos else "",
+                "desired_qty": desired_pos.qty if desired_pos else "",
+                "mnq_symbol": MNQ_SYMBOL,
+                "action": "skip_consensus_failed",
+                "status": "ignored",
+                "fill_price": "",
+                "payload_json": "",
+                "response_json": "",
+                "note": "3-symbol same-direction consensus not satisfied",
+            }
+        )
+        print_yellow("MT5 TRADE DECISION: DO NOT SEND ORDER (consensus condition failed).")
+        print_cyan(f"Log file: {TRADE_LOG_FILE}")
+        return
 
     if not desired_pos:
         print_yellow("AMP signal is flat or unparsable. Ignoring.")
@@ -349,10 +497,10 @@ def main() -> None:
                 "fill_price": "",
                 "payload_json": "",
                 "response_json": "",
-                "note": "Flat signals are ignored",
+                "note": "Flat or unparsable signals are ignored",
             }
         )
-        print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
+        print_cyan(f"Log file: {TRADE_LOG_FILE}")
         return
 
     if not apikey or not systemid_raw:
@@ -388,7 +536,7 @@ def main() -> None:
                 "note": "Existing MNQ position detected",
             }
         )
-        print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
+        print_cyan(f"Log file: {TRADE_LOG_FILE}")
         return
 
     payload = build_parent_order_market_only(
@@ -398,7 +546,7 @@ def main() -> None:
         qty=desired_pos.qty,
     )
 
-    print(CYAN + "Order payload:" + RESET)
+    print_cyan("Order payload:")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
     if DRY_RUN:
@@ -423,11 +571,12 @@ def main() -> None:
                 "note": "Dry run mode enabled",
             }
         )
-        print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
+        print_cyan(f"Log file: {TRADE_LOG_FILE}")
         return
 
     result = api4_post("/Strategies/NewStrategyOrder", apikey, payload)
-    print_green(BOLD + "sent order" + RESET)
+    print_green_bold("MT5 TRADE DECISION: SEND ORDER")
+    print_green_bold("sent order")
 
     fill = wait_for_fill(
         apikey=apikey,
@@ -462,11 +611,15 @@ def main() -> None:
             "fill_price": fill_price,
             "payload_json": json.dumps(payload, ensure_ascii=False),
             "response_json": json.dumps(result, ensure_ascii=False),
-            "note": "Order submitted from scraped top-ranked NQ strategy",
+            "note": "Order submitted from scraped top-ranked NQ strategy after 3-symbol consensus",
         }
     )
 
-    print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
+    print_cyan(f"Log file: {TRADE_LOG_FILE}")
+    print_green_bold(
+        f"FINAL SUMMARY -> send_trade=True | side={desired_pos.side} | qty={desired_pos.qty} "
+        f"| consensus_max_same_direction={consensus['max_same_direction']}"
+    )
 
 
 if __name__ == "__main__":

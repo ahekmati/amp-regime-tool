@@ -9,32 +9,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
+
 import requests
 from bs4 import BeautifulSoup
+
 
 AMP_URL = "https://ampfutures.isystems.com/Systems/TopStrategies"
 C2_API4_BASE = "https://api4-general.collective2.com"
 REQUEST_TIMEOUT = 30
 
+
 TOP_N = int(os.getenv("TOP_N", "10"))
 DRY_RUN = os.getenv("DRY_RUN", "0").strip() == "1"
 
+
 C2_STRATEGY_ID = 155560809
 
-MGC_SYMBOL = os.getenv("MGC_SYMBOL", "@MGCM6")
-MCL_SYMBOL = os.getenv("MCL_SYMBOL", "@MCLM6")
+
 MES_SYMBOL = os.getenv("MES_SYMBOL", "@MESM6")
 MYM_SYMBOL = os.getenv("MYM_SYMBOL", "@MYMM6")
 
+
 SUPPORTED_PRODUCTS = {
-    "GC": MGC_SYMBOL,
-    "CL": MCL_SYMBOL,
     "ES": MES_SYMBOL,
     "YM": MYM_SYMBOL,
 }
 
+
 HISTORY_DIR = Path(os.getenv("HISTORY_DIR", "./history"))
 TRADE_LOG_FILE = HISTORY_DIR / "multi_micro_copier_log.csv"
+
 
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -42,6 +46,7 @@ YELLOW = "\033[93m"
 CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
+
 
 
 @dataclass
@@ -55,10 +60,12 @@ class ScrapedRow:
     developer: str = ""
 
 
+
 @dataclass
 class ParsedPosition:
     side: str
     qty: int
+
 
 
 @dataclass
@@ -70,6 +77,7 @@ class OpenPosition:
     raw: dict
 
 
+
 def to_float_safe(v: Any) -> Optional[float]:
     try:
         if v is None or v == "":
@@ -79,16 +87,20 @@ def to_float_safe(v: Any) -> Optional[float]:
         return None
 
 
+
 def print_green(line: str) -> None:
     print(GREEN + line + RESET)
+
 
 
 def print_yellow(line: str) -> None:
     print(YELLOW + line + RESET)
 
 
+
 def print_red(line: str) -> None:
     print(RED + line + RESET)
+
 
 
 def fetch_amp_html() -> str:
@@ -103,6 +115,7 @@ def fetch_amp_html() -> str:
     return r.text
 
 
+
 def money_to_float(s: str) -> Optional[float]:
     s = s.replace("$", "").replace(",", "").strip()
     try:
@@ -111,17 +124,21 @@ def money_to_float(s: str) -> Optional[float]:
         return None
 
 
+
 def parse_current_session(html: str) -> List[ScrapedRow]:
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id="tableCurrentSession")
     if not table:
         raise RuntimeError("Could not find tableCurrentSession in AMP HTML")
 
+
     body = table.find("tbody")
     if not body:
         raise RuntimeError("tableCurrentSession has no tbody")
 
+
     rows: List[ScrapedRow] = []
+
 
     for tr in body.find_all("tr"):
         rank_td = None
@@ -133,23 +150,29 @@ def parse_current_session(html: str) -> List[ScrapedRow]:
         nearest_td = tr.find("td", id=re.compile(r"^rankClosestOrder_"))
         all_tds = tr.find_all("td")
 
+
         if len(all_tds) >= 2:
             rank_td = all_tds[1]
 
+
         if not all([rank_td, system_td, product_td, pnl_td, pos_td, nearest_td]):
             continue
+
 
         m = re.search(r"#(\d+)", rank_td.get_text(" ", strip=True))
         if not m:
             continue
 
+
         rank = int(m.group(1))
         if rank > TOP_N:
             continue
 
+
         pnl = money_to_float(pnl_td.get_text(" ", strip=True))
         if pnl is None:
             continue
+
 
         rows.append(
             ScrapedRow(
@@ -163,7 +186,9 @@ def parse_current_session(html: str) -> List[ScrapedRow]:
             )
         )
 
+
     return rows
+
 
 
 def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
@@ -174,8 +199,10 @@ def pick_best_supported(rows: List[ScrapedRow]) -> Optional[ScrapedRow]:
     return supported[0]
 
 
+
 def summarize_products(rows: List[ScrapedRow]) -> str:
     return ", ".join([f"#{r.rank}:{r.product}" for r in rows])
+
 
 
 def parse_direction_and_size(text: str) -> Optional[ParsedPosition]:
@@ -183,11 +210,14 @@ def parse_direction_and_size(text: str) -> Optional[ParsedPosition]:
     if text in {"", "--", "-", "Flat", "FLAT", "flat"}:
         return None
 
+
     m = re.match(r"^(Long|Short)\s+(\d+)\s*@", text, flags=re.I)
     if not m:
         return None
 
+
     return ParsedPosition(side=m.group(1).lower(), qty=int(m.group(2)))
+
 
 
 def api4_get(path: str, apikey: str, params: Dict[str, Any]) -> dict:
@@ -201,15 +231,27 @@ def api4_get(path: str, apikey: str, params: Dict[str, Any]) -> dict:
     return r.json()
 
 
+
 def api4_post(path: str, apikey: str, payload: dict) -> dict:
     url = f"{C2_API4_BASE}{path}"
     headers = {
         "Authorization": f"Bearer {apikey}",
         "Content-Type": "application/json",
+        "Accept": "application/json",
     }
     r = requests.post(url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
-    r.raise_for_status()
+
+    if not r.ok:
+        print_red(f"C2 HTTP status: {r.status_code}")
+        try:
+            print_red("C2 error body:")
+            print(json.dumps(r.json(), indent=2, ensure_ascii=False))
+        except Exception:
+            print_red(f"C2 raw error text: {r.text}")
+        r.raise_for_status()
+
     return r.json()
+
 
 
 def get_open_positions(apikey: str, strategy_id: int) -> dict:
@@ -220,22 +262,27 @@ def get_open_positions(apikey: str, strategy_id: int) -> dict:
     )
 
 
+
 def extract_supported_open_positions(open_positions: dict) -> List[OpenPosition]:
     results = open_positions.get("Results", [])
     extracted: List[OpenPosition] = []
     supported_symbols = set(SUPPORTED_PRODUCTS.values())
 
+
     for p in results:
         sym = p.get("C2Symbol", {}).get("FullSymbol")
         qty = p.get("Quantity")
+
 
         if sym not in supported_symbols:
             continue
         if not qty or qty == 0:
             continue
 
+
         side = "long" if qty > 0 else "short"
         entry_price = p.get("AvgPx") or p.get("AvgEntryPrice") or p.get("EntryPrice")
+
 
         extracted.append(
             OpenPosition(
@@ -247,7 +294,9 @@ def extract_supported_open_positions(open_positions: dict) -> List[OpenPosition]
             )
         )
 
+
     return extracted
+
 
 
 def build_parent_order_market_only(
@@ -270,6 +319,7 @@ def build_parent_order_market_only(
             },
         }
     }
+
 
 
 def wait_for_fill(
@@ -295,9 +345,11 @@ def wait_for_fill(
     return None
 
 
+
 def log_event(row: Dict[str, Any]) -> None:
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     write_header = not TRADE_LOG_FILE.exists()
+
 
     fieldnames = [
         "timestamp_utc",
@@ -321,6 +373,7 @@ def log_event(row: Dict[str, Any]) -> None:
         "note",
     ]
 
+
     with TRADE_LOG_FILE.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if write_header:
@@ -328,27 +381,32 @@ def log_event(row: Dict[str, Any]) -> None:
         writer.writerow({k: row.get(k, "") for k in fieldnames})
 
 
+
 def main() -> None:
     apikey = os.getenv("C2_API_KEY", "").strip()
     now = datetime.now(timezone.utc).isoformat()
 
+
     print(CYAN + BOLD + f"AMP multi-product -> micro copier started at {now}" + RESET)
     print(CYAN + f"C2 strategy id: {C2_STRATEGY_ID}" + RESET)
     print(CYAN + f"Supported products: {SUPPORTED_PRODUCTS}" + RESET)
+
 
     html = fetch_amp_html()
     rows = parse_current_session(html)
     if not rows:
         raise RuntimeError("No rows parsed from AMP current session table")
 
+
     print(CYAN + "Top rows found:" + RESET)
     for r in rows:
         print(CYAN + f"#{r.rank} {r.product} | {r.system} | {r.current_position}" + RESET)
 
+
     best_row = pick_best_supported(rows)
     if not best_row:
         found = summarize_products(rows)
-        print_yellow("No GC, CL, ES, or YM strategy found inside AMP top rows. Nothing to do.")
+        print_yellow("No ES or YM strategy found inside AMP top rows. Nothing to do.")
         print_yellow(f"Products seen: {found}")
         log_event(
             {
@@ -376,8 +434,10 @@ def main() -> None:
         print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
         return
 
+
     desired_pos = parse_direction_and_size(best_row.current_position)
     mapped_symbol = SUPPORTED_PRODUCTS[best_row.product]
+
 
     print_green(BOLD + "SCRAPED STRATEGY FOUND" + RESET)
     print_green(f"Strategy: {best_row.system}")
@@ -386,6 +446,7 @@ def main() -> None:
     print_green(f"Mapped symbol: {mapped_symbol}")
     print_green(f"Current position: {best_row.current_position}")
     print_green(f"Nearest order: {best_row.nearest_order}")
+
 
     if desired_pos:
         signal_text = f"{desired_pos.side.upper()} x {desired_pos.qty}"
@@ -420,11 +481,14 @@ def main() -> None:
         print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
         return
 
+
     if not apikey:
         raise RuntimeError("Missing C2_API_KEY environment variable")
 
+
     openpos_raw = get_open_positions(apikey, C2_STRATEGY_ID)
     current_positions = extract_supported_open_positions(openpos_raw)
+
 
     if current_positions:
         existing = current_positions[0]
@@ -457,6 +521,7 @@ def main() -> None:
         print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
         return
 
+
     payload = build_parent_order_market_only(
         strategy_id=C2_STRATEGY_ID,
         full_symbol=mapped_symbol,
@@ -464,8 +529,10 @@ def main() -> None:
         qty=desired_pos.qty,
     )
 
+
     print(CYAN + "Order payload:" + RESET)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
 
     if DRY_RUN:
         print_yellow("DRY_RUN=1 - order not sent.")
@@ -495,8 +562,10 @@ def main() -> None:
         print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
         return
 
+
     result = api4_post("/Strategies/NewStrategyOrder", apikey, payload)
     print_green(BOLD + "sent order" + RESET)
+
 
     fill = wait_for_fill(
         apikey=apikey,
@@ -508,8 +577,10 @@ def main() -> None:
         poll_seconds=3,
     )
 
+
     fill_confirmed = "yes" if fill else "no"
     fill_price = fill.entry_price if fill else ""
+
 
     if fill:
         if fill.entry_price is not None:
@@ -522,6 +593,7 @@ def main() -> None:
             print_green("Fill price: unavailable")
     else:
         print_yellow("No matching C2 fill detected within wait window.")
+
 
     log_event(
         {
@@ -547,7 +619,9 @@ def main() -> None:
         }
     )
 
+
     print(CYAN + f"Log file: {TRADE_LOG_FILE}" + RESET)
+
 
 
 if __name__ == "__main__":

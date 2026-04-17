@@ -10,16 +10,13 @@ from typing import Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-
 try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
 
-
 if load_dotenv:
     load_dotenv(dotenv_path=".env.script2")
-
 
 AMP_URL = os.getenv("AMP_URL", "https://ampfutures.isystems.com/Systems/TopStrategies")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
@@ -46,34 +43,26 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-
-def now_utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 def green(msg: str) -> None:
     print(f"{GREEN}{msg}{RESET}")
 
-
 def green_bold(msg: str) -> None:
     print(f"{GREEN}{BOLD}{msg}{RESET}")
-
 
 def yellow(msg: str) -> None:
     print(f"{YELLOW}{msg}{RESET}")
 
-
 def red(msg: str) -> None:
     print(f"{RED}{msg}{RESET}")
-
 
 def cyan(msg: str) -> None:
     print(f"{CYAN}{msg}{RESET}")
 
-
 def normalize_text(x: str) -> str:
     return re.sub(r"\s+", " ", (x or "").strip())
-
 
 def money_to_float(s: str) -> Optional[float]:
     if s is None:
@@ -84,11 +73,9 @@ def money_to_float(s: str) -> Optional[float]:
     except Exception:
         return None
 
-
 def stable_row_id(system: str, product: str, developer: str) -> str:
     base = f"{normalize_text(system)}|{normalize_text(product)}|{normalize_text(developer)}"
     return hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
-
 
 def fetch_html() -> str:
     headers = {"User-Agent": USER_AGENT}
@@ -96,13 +83,11 @@ def fetch_html() -> str:
     r.raise_for_status()
     return r.text
 
-
 def debug_write(name: str, content: str) -> None:
     if not SAVE_DEBUG:
         return
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     (DEBUG_DIR / name).write_text(content, encoding="utf-8")
-
 
 def parse_current_session(html: str) -> List[Dict]:
     soup = BeautifulSoup(html, "html.parser")
@@ -169,7 +154,6 @@ def parse_current_session(html: str) -> List[Dict]:
     debug_write("debug_parse_rows.txt", "\n".join(debug_lines))
     return rows
 
-
 def product_root(product: str, system: str = "") -> Optional[str]:
     p = normalize_text(product).upper()
     s = normalize_text(system).upper()
@@ -187,7 +171,6 @@ def product_root(product: str, system: str = "") -> Optional[str]:
     if "NASDAQ" in combined:
         return "NQ"
     return None
-
 
 def parse_position_text(pos: str) -> str:
     p = normalize_text(pos).upper()
@@ -208,7 +191,6 @@ def parse_position_text(pos: str) -> str:
         return "short"
 
     return "unknown"
-
 
 def count_directional_consensus(rows: List[Dict]) -> Dict[str, int]:
     long_count = 0
@@ -238,7 +220,6 @@ def count_directional_consensus(rows: List[Dict]) -> Dict[str, int]:
         "qualifying_count": long_count + short_count,
         "qualifying_rows": qualifying_rows,
     }
-
 
 def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
     debug_lines = [f"total rows={len(rows)}"]
@@ -292,7 +273,6 @@ def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
     debug_write("debug_choose_nq_leader.txt", "\n".join(debug_lines))
     return None
 
-
 def get_top_nq_rows(rows: List[Dict], n: int = 3) -> List[Dict]:
     nq_rows = []
     for r in rows:
@@ -301,7 +281,6 @@ def get_top_nq_rows(rows: List[Dict], n: int = 3) -> List[Dict]:
             nq_rows.append(r)
     nq_rows.sort(key=lambda x: x["rank"])
     return nq_rows[:n]
-
 
 def target_to_action(target: Optional[str]) -> Optional[str]:
     if target == "long":
@@ -312,14 +291,18 @@ def target_to_action(target: Optional[str]) -> Optional[str]:
         return "FLAT"
     return None
 
-
 def build_payload(row: Optional[Dict], error: Optional[str] = None) -> Dict:
+    ts = now_utc()
+    generated_iso = ts.isoformat()
+    generated_unix = int(ts.timestamp())
+
     payload = {
-        "generated_at_utc": now_utc_iso(),
+        "generated_at_utc": generated_iso,
         "source": "AMP TopStrategies",
         "mode": "NQ-only top-ranked selector",
         "error": error,
         "signal": {
+            "generated_at_utc": generated_unix,
             "symbol": MT5_SYMBOL_NQ,
             "master_found": False,
             "target": None,
@@ -356,13 +339,11 @@ def build_payload(row: Optional[Dict], error: Optional[str] = None) -> Dict:
 
     return payload
 
-
 def write_signal(payload: Dict) -> None:
     SIGNAL_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = SIGNAL_FILE.with_suffix(SIGNAL_FILE.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(SIGNAL_FILE)
-
 
 def main() -> None:
     rows: List[Dict] = []
@@ -375,7 +356,8 @@ def main() -> None:
         "qualifying_rows": [],
     }
 
-    green_bold(f"=== AMP NQ BRIDGE START {now_utc_iso()} ===")
+    started_at = now_utc()
+    green_bold(f"=== AMP NQ BRIDGE START {started_at.isoformat()} ===")
     cyan(f"AMP_URL={AMP_URL}")
     cyan(f"TOP_N={TOP_N} | RANK_FALLBACK_MAX={RANK_FALLBACK_MAX} | MT5_SYMBOL_NQ={MT5_SYMBOL_NQ}")
 
@@ -470,13 +452,15 @@ def main() -> None:
         green(f"Leader parsed target: {s['target']}")
         green(f"Leader action: {s['action']}")
         green(f"Leader nearest order: {s['nearest_order']}")
+        green(f"Signal generated_at_utc (unix): {s['generated_at_utc']}")
     else:
         yellow("No valid top-ranked NQ leader was selected.")
 
     print(
         f"selected_found={s['master_found']} "
         f"rank={s['rank']} target={s['target']} action={s['action']} "
-        f"product={s['product']} system={s['system']} error={payload.get('error')}"
+        f"product={s['product']} system={s['system']} signal_generated_at_utc={s.get('generated_at_utc')} "
+        f"error={payload.get('error')}"
     )
 
     if s["master_found"] and s["action"]:
@@ -492,7 +476,7 @@ def main() -> None:
     else:
         yellow("MT5 TRADE DECISION: DO NOT SEND ORDER")
         yellow(
-            "Reason: no valid NQ/MNQ candidate in allowed ranks, "
+            "Reason: no valid NQ/MNQ candidate found in allowed ranks, "
             "consensus condition failed, or parsed action was empty."
         )
 
@@ -500,7 +484,6 @@ def main() -> None:
         f"FINAL SUMMARY -> send_trade={bool(s['master_found'] and s['action'])} "
         f"| target={s['target']} | action={s['action']} | rank={s['rank']}"
     )
-
 
 if __name__ == "__main__":
     main()

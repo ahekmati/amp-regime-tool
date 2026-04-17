@@ -1,9 +1,10 @@
 {
-  "generated_at_utc": "2026-04-17T01:04:54.639698+00:00",
+  "generated_at_utc": "2026-04-17T17:45:31.402757+00:00",
   "source": "AMP TopStrategies",
   "mode": "NQ-only top-ranked selector",
   "error": null,
   "signal": {
+    "generated_at_utc": 1776447931,
     "symbol": "MNQM26",
     "master_found": true,
     "target": "long",
@@ -13,10 +14,10 @@
     "tp_points": 2200.0,
     "system": "Position Gan_v.22 _ E-mini Nasdaq NQ",
     "product": "NQ",
-    "rank": 6,
+    "rank": 2,
     "current_position_raw": "Long 1 @ 25215.75",
     "nearest_order": "Sell STP 1 @ 26277",
     "row_id": "b4a16812d59fbdc4",
-    "message": "Selected top-ranked NQ candidate rank 6"
+    "message": "Selected top-ranked NQ candidate rank 2"
   }
 }
