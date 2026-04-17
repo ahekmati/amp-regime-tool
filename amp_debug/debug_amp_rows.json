@@ -1,0 +1,102 @@
+[
+  {
+    "row_id": "3515a5a61463c0d0",
+    "rank": 1,
+    "system": "ALGOsigmaX E-mini S&P ES",
+    "product": "ES",
+    "developer": "Victor Semenchuk",
+    "pnl": 275.0,
+    "current_position": "Long 1 @ 6807.50",
+    "nearest_order": "Sell STP 1 @ 6973.25"
+  },
+  {
+    "row_id": "a272c2dd60532de5",
+    "rank": 2,
+    "system": "Forest Eurostoxx-50 Maredu %pct T.profit & SL",
+    "product": "FESX",
+    "developer": "Forest Trading",
+    "pnl": 58.91,
+    "current_position": "Short 1 @ 5794",
+    "nearest_order": "Buy STP 1 @ 5938"
+  },
+  {
+    "row_id": "2c8c22117100f8f2",
+    "rank": 3,
+    "system": "CIRUS ST EUROFX NEBULA",
+    "product": "URO",
+    "developer": "CirusTrading",
+    "pnl": 12.5,
+    "current_position": "Short 1 @ 1.1572",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "4a25a57409ea6391",
+    "rank": 4,
+    "system": "CIRUS EURFX ST13 ROGY",
+    "product": "URO",
+    "developer": "CirusTrading",
+    "pnl": null,
+    "current_position": "Long 1 @ 1.1560",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "6937025b67bda6df",
+    "rank": 5,
+    "system": "CONES EUROFX DW 30-30",
+    "product": "URO",
+    "developer": "CirusTrading",
+    "pnl": null,
+    "current_position": "Long 1 @ 1.1730",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "b4a16812d59fbdc4",
+    "rank": 6,
+    "system": "Position Gan_v.22 _ E-mini Nasdaq NQ",
+    "product": "NQ",
+    "developer": "AutoTradingBot",
+    "pnl": null,
+    "current_position": "Long 1 @ 25215.75",
+    "nearest_order": "Sell STP 1 @ 26277"
+  },
+  {
+    "row_id": "63741ca1cd626891",
+    "rank": 7,
+    "system": "FASSONERIA 3.0",
+    "product": "NQ",
+    "developer": "KORIAL SYSTEMS",
+    "pnl": null,
+    "current_position": "Long 1 @ 26475.25",
+    "nearest_order": "Sell STP 1 @ 26375.25"
+  },
+  {
+    "row_id": "6b77d2cddd91a74a",
+    "rank": 8,
+    "system": "FASSONERIA 4.0",
+    "product": "NQ",
+    "developer": "KORIAL SYSTEMS",
+    "pnl": null,
+    "current_position": "Long 1 @ 26475.25",
+    "nearest_order": "Sell STP 1 @ 26375.25"
+  },
+  {
+    "row_id": "ec106baa83c420ea",
+    "rank": 9,
+    "system": "Watto Corn 3Loops",
+    "product": "ZC",
+    "developer": "ILernet Trading Systems",
+    "pnl": null,
+    "current_position": "Short 1 @ 470",
+    "nearest_order": "Buy STP 1 @ 478.75"
+  },
+  {
+    "row_id": "94a55f22903f34e7",
+    "rank": 10,
+    "system": "Watto Kgor Wheat Medses",
+    "product": "ZW",
+    "developer": "ILernet Trading Systems",
+    "pnl": null,
+    "current_position": "Short 1 @ 637.75",
+    "nearest_order": "Buy LMT 1 @ 560.50"
+  }
+]

@@ -1,0 +1,14 @@
+total rows=10
+candidate_check rank=1 product=ES system=ALGOsigmaX E-mini S&P ES root=ES pos=Long 1 @ 6807.50 target=long
+candidate_check rank=2 product=FESX system=Forest Eurostoxx-50 Maredu %pct T.profit & SL root=ES pos=Short 1 @ 5794 target=short
+candidate_check rank=3 product=URO system=CIRUS ST EUROFX NEBULA root=None pos=Short 1 @ 1.1572 target=short
+candidate_check rank=4 product=URO system=CIRUS EURFX ST13 ROGY root=None pos=Long 1 @ 1.1560 target=long
+candidate_check rank=5 product=URO system=CONES EUROFX DW 30-30 root=ES pos=Long 1 @ 1.1730 target=long
+candidate_check rank=6 product=NQ system=Position Gan_v.22 _ E-mini Nasdaq NQ root=NQ pos=Long 1 @ 25215.75 target=long
+candidate_check rank=7 product=NQ system=FASSONERIA 3.0 root=NQ pos=Long 1 @ 26475.25 target=long
+candidate_check rank=8 product=NQ system=FASSONERIA 4.0 root=NQ pos=Long 1 @ 26475.25 target=long
+candidate_check rank=9 product=ZC system=Watto Corn 3Loops root=None pos=Short 1 @ 470 target=short
+candidate_check rank=10 product=ZW system=Watto Kgor Wheat Medses root=ES pos=Short 1 @ 637.75 target=short
+nq_rows=3 rank_fallback_max=10
+consider rank=6 product=NQ pos=Long 1 @ 25215.75 target=long
+SELECTED row_id=b4a16812d59fbdc4 rank=6 target=long
