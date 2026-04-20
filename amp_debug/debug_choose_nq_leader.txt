@@ -1,15 +1,3 @@
 total rows=10
-consensus_long_count_NQ_ES_YM=7 consensus_short_count_NQ_ES_YM=0 max_same_direction=7
-candidate_check rank=1 product=GC system=NEO DELTA LONG GOLD V1 root=None pos=Long 1 @ 4812 target=long
-candidate_check rank=2 product=NQ system=Position Gan_v.22 _ E-mini Nasdaq NQ root=NQ pos=Long 1 @ 25215.75 target=long
-candidate_check rank=3 product=YM system=Dow Scalp root=YM pos=Long 1 @ 48880 target=long
-candidate_check rank=4 product=ES system=ALGOsigmaX E-mini S&P ES root=ES pos=Long 1 @ 6807.50 target=long
-candidate_check rank=5 product=ES system=AMARONE LI15MYM root=ES pos=Flat target=flat
-candidate_check rank=6 product=ES system=Ignis E-mini S&P 30' root=ES pos=Long 1 @ 7160.25 target=long
-candidate_check rank=7 product=FGBL system=Watto Sonic BUND - Extralonses root=ES pos=Long 1 @ 125.11 target=long
-candidate_check rank=8 product=FESX system=ADX root=ES pos=Long 1 @ 5914 target=long
-candidate_check rank=9 product=NQ system=DEL PONTE RECCO NQ 3.0 root=NQ pos=Flat target=flat
-candidate_check rank=10 product=SF system=Ackbar Kgor SwissFranc Medses root=ES pos=Long 1 @ 1.2844 target=long
-nq_rows=2 rank_fallback_max=10
-consider rank=2 product=NQ pos=Long 1 @ 25215.75 target=long
-SELECTED row_id=b4a16812d59fbdc4 rank=2 target=long
+consensus_long_count_NQ_ES_YM=0 consensus_short_count_NQ_ES_YM=0 max_same_direction=0
+Consensus condition FAILED: need at least 3 NQ/ES/YM strategies all in the same direction (all long or all short). No NQ leader will be selected.

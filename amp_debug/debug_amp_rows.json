@@ -1,102 +1,102 @@
 [
   {
-    "row_id": "245dce011513c352",
+    "row_id": "6b77d2cddd91a74a",
     "rank": 1,
-    "system": "NEO DELTA LONG GOLD V1",
-    "product": "GC",
-    "developer": "Victor Semenchuk",
-    "pnl": 7062.48,
-    "current_position": "Long 1 @ 4812",
-    "nearest_order": "Sell STP 1 @ 4749.4"
-  },
-  {
-    "row_id": "b4a16812d59fbdc4",
-    "rank": 2,
-    "system": "Position Gan_v.22 _ E-mini Nasdaq NQ",
-    "product": "NQ",
-    "developer": "AutoTradingBot",
-    "pnl": 5560.0,
-    "current_position": "Long 1 @ 25215.75",
-    "nearest_order": "Sell STP 1 @ 26277"
-  },
-  {
-    "row_id": "049a64e4514072d3",
-    "rank": 3,
-    "system": "Dow Scalp",
-    "product": "YM",
-    "developer": "Liderbot",
-    "pnl": 4157.5,
-    "current_position": "Long 1 @ 48880",
-    "nearest_order": "Sell LMT 1 @ 50689"
-  },
-  {
-    "row_id": "3515a5a61463c0d0",
-    "rank": 4,
-    "system": "ALGOsigmaX E-mini S&P ES",
-    "product": "ES",
-    "developer": "Victor Semenchuk",
-    "pnl": 4062.5,
-    "current_position": "Long 1 @ 6807.50",
-    "nearest_order": "Sell STP 1 @ 7018.25"
-  },
-  {
-    "row_id": "cd67b68d90cb6a7a",
-    "rank": 5,
-    "system": "AMARONE LI15MYM",
-    "product": "ES",
-    "developer": "HelloTrading",
-    "pnl": 1998.75,
-    "current_position": "Flat",
-    "nearest_order": "--"
-  },
-  {
-    "row_id": "b698b9c1badd68c2",
-    "rank": 6,
-    "system": "Ignis E-mini S&P 30'",
-    "product": "ES",
-    "developer": "0MG SYST3MS",
-    "pnl": 1402.5,
-    "current_position": "Long 1 @ 7160.25",
-    "nearest_order": "Sell STP 1 @ 7149.25"
-  },
-  {
-    "row_id": "90f80f4a326ca4b5",
-    "rank": 7,
-    "system": "Watto Sonic BUND - Extralonses",
-    "product": "FGBL",
-    "developer": "ILernet Trading Systems",
-    "pnl": 707.82,
-    "current_position": "Long 1 @ 125.11",
-    "nearest_order": "Sell STP 1 @ 124.71"
-  },
-  {
-    "row_id": "2362b79e589a7e3a",
-    "rank": 8,
-    "system": "ADX",
-    "product": "FESX",
-    "developer": "Marco Bettani",
-    "pnl": 672.43,
-    "current_position": "Long 1 @ 5914",
-    "nearest_order": "--"
-  },
-  {
-    "row_id": "39168b43411840d7",
-    "rank": 9,
-    "system": "DEL PONTE RECCO NQ 3.0",
+    "system": "FASSONERIA 4.0",
     "product": "NQ",
     "developer": "KORIAL SYSTEMS",
-    "pnl": 657.5,
+    "pnl": 993.33,
     "current_position": "Flat",
     "nearest_order": "--"
+  },
+  {
+    "row_id": "5efb236c16f2b2bb",
+    "rank": 2,
+    "system": "Position Trad Cont v.5.2 _ Live Cattle LE",
+    "product": "LE",
+    "developer": "AutoTradingBot",
+    "pnl": 440.0,
+    "current_position": "Long 1 @ 244.80",
+    "nearest_order": "Sell STP 1 @ 243.05"
   },
   {
     "row_id": "291d7e1c4629fcf8",
-    "rank": 10,
+    "rank": 3,
     "system": "Ackbar Kgor SwissFranc Medses",
     "product": "SF",
     "developer": "ILernet Trading Systems",
-    "pnl": 652.5,
+    "pnl": 175.0,
     "current_position": "Long 1 @ 1.2844",
-    "nearest_order": "Sell STP 1 @ 1.2790"
+    "nearest_order": "Sell STP 1 @ 1.2763"
+  },
+  {
+    "row_id": "40c35bca9c30d6a9",
+    "rank": 4,
+    "system": "Sucellus E-mini DowJones 5'",
+    "product": "YM",
+    "developer": "0MG SYST3MS",
+    "pnl": 50.0,
+    "current_position": "Flat",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "ec106baa83c420ea",
+    "rank": 5,
+    "system": "Watto Corn 3Loops",
+    "product": "ZC",
+    "developer": "ILernet Trading Systems",
+    "pnl": -37.5,
+    "current_position": "Short 1 @ 470",
+    "nearest_order": "Buy STP 1 @ 478.75"
+  },
+  {
+    "row_id": "ced97469e0ffca29",
+    "rank": 6,
+    "system": "CONES BRITISH YM LUDOVIC",
+    "product": "BP",
+    "developer": "CirusTrading",
+    "pnl": -37.5,
+    "current_position": "Long 1 @ 1.3531",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "2c8c22117100f8f2",
+    "rank": 7,
+    "system": "CIRUS ST EUROFX NEBULA",
+    "product": "URO",
+    "developer": "CirusTrading",
+    "pnl": -75.0,
+    "current_position": "Long 1 @ 1.1826",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "4a25a57409ea6391",
+    "rank": 8,
+    "system": "CIRUS EURFX ST13 ROGY",
+    "product": "URO",
+    "developer": "CirusTrading",
+    "pnl": -75.0,
+    "current_position": "Long 1 @ 1.1560",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "f976c1609f4ee87c",
+    "rank": 9,
+    "system": "CONES TNOTE SWISS 90 90",
+    "product": "ZN",
+    "developer": "CirusTrading",
+    "pnl": -93.75,
+    "current_position": "Long 1 @ 111.29690",
+    "nearest_order": "--"
+  },
+  {
+    "row_id": "94a55f22903f34e7",
+    "rank": 10,
+    "system": "Watto Kgor Wheat Medses",
+    "product": "ZW",
+    "developer": "ILernet Trading Systems",
+    "pnl": -150.0,
+    "current_position": "Short 1 @ 637.75",
+    "nearest_order": "Buy LMT 1 @ 560.50"
   }
 ]

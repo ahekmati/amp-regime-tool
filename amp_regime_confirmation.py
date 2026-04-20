@@ -22,6 +22,8 @@ MNQ_SYMBOL = os.getenv("MNQ_SYMBOL", "@MNQM6")
 HISTORY_DIR = Path(os.getenv("HISTORY_DIR", "./history"))
 TRADE_LOG_FILE = HISTORY_DIR / "mnq_copier_log.csv"
 
+CONSENSUS_MIN = int(os.getenv("CONSENSUS_MIN", "3"))
+
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -102,7 +104,11 @@ def fetch_amp_html() -> str:
 
 
 def money_to_float(s: str) -> Optional[float]:
+    if s is None:
+        return None
     s = s.replace("$", "").replace(",", "").strip()
+    if s.startswith("(") and s.endswith(")"):
+        s = f"-{s[1:-1]}"
     try:
         return float(s)
     except Exception:
@@ -170,19 +176,37 @@ def parse_current_session(html: str) -> List[ScrapedRow]:
 def product_root(product: str, system: str = "") -> Optional[str]:
     p = normalize_text(product).upper()
     s = normalize_text(system).upper()
-    combined = f"{p} | {s}"
 
-    if "MICRO" in combined and "NASDAQ" in combined:
-        return "MNQ"
-    if "E-MINI" in combined and "NASDAQ" in combined:
-        return "NQ"
+    exact_map = {
+        "NQ": "NQ",
+        "MNQ": "MNQ",
+        "ES": "ES",
+        "MES": "MES",
+        "YM": "YM",
+        "MYM": "MYM",
+        "RTY": "RTY",
+        "M2K": "M2K",
+    }
+    if p in exact_map:
+        return exact_map[p]
 
-    for root in ("MNQ", "NQ", "MES", "ES", "MYM", "YM"):
-        if root in p or root in s:
+    combined = f"{p} {s}"
+
+    patterns = [
+        (r"\bMICRO\s+NASDAQ\b", "MNQ"),
+        (r"\bE-?MINI\s+NASDAQ\b", "NQ"),
+        (r"\bNASDAQ\b", "NQ"),
+        (r"\bMICRO\s+E-?MINI\s+S&P\b", "MES"),
+        (r"\bE-?MINI\s+S&P\b", "ES"),
+        (r"\bS&P\s*500\b", "ES"),
+        (r"\bMICRO\s+DOW\s*JONES\b", "MYM"),
+        (r"\bDOW\s*JONES\b", "YM"),
+        (r"\bRUSSELL\s*2000\b", "RTY"),
+    ]
+    for pattern, root in patterns:
+        if re.search(pattern, combined):
             return root
 
-    if "NASDAQ" in combined:
-        return "NQ"
     return None
 
 
@@ -216,17 +240,14 @@ def count_directional_consensus(rows: List[ScrapedRow]) -> Dict[str, Any]:
         root = product_root(r.product, r.system)
         pos = parse_position_text(r.current_position)
 
-        if root in ("NQ", "MNQ", "ES", "MES", "YM", "MYM"):
+        if root in ("NQ", "MNQ", "ES", "MES", "YM", "MYM") and pos in ("long", "short"):
             if pos == "long":
                 long_count += 1
-                qualifying_rows.append(
-                    f"rank #{r.rank} | {root} | LONG | {r.system}"
-                )
-            elif pos == "short":
+            else:
                 short_count += 1
-                qualifying_rows.append(
-                    f"rank #{r.rank} | {root} | SHORT | {r.system}"
-                )
+            qualifying_rows.append(
+                f"rank #{r.rank} | {root} | {pos.upper()} | {r.system} | product={r.product}"
+            )
 
     return {
         "long_count": long_count,
@@ -400,7 +421,10 @@ def main() -> None:
     now = datetime.now(timezone.utc).isoformat()
 
     print_cyan(BOLD + f"AMP NQ -> MNQ copier started at {now}" + RESET)
-    print_cyan(f"AMP_URL={AMP_URL} | TOP_N={TOP_N} | MNQ_SYMBOL={MNQ_SYMBOL} | DRY_RUN={DRY_RUN}")
+    print_cyan(
+        f"AMP_URL={AMP_URL} | TOP_N={TOP_N} | MNQ_SYMBOL={MNQ_SYMBOL} "
+        f"| CONSENSUS_MIN={CONSENSUS_MIN} | DRY_RUN={DRY_RUN}"
+    )
 
     html = fetch_amp_html()
     print_green("Fetched AMP current session page successfully.")
@@ -425,14 +449,14 @@ def main() -> None:
     else:
         print_yellow("No qualifying NQ/ES/YM rows with long/short direction were found.")
 
-    if consensus["max_same_direction"] >= 3:
-        dominant = "LONG" if consensus["long_count"] >= 3 else "SHORT"
+    if consensus["max_same_direction"] >= CONSENSUS_MIN:
+        dominant = "LONG" if consensus["long_count"] >= CONSENSUS_MIN else "SHORT"
         print_green_bold(
-            f"Consensus PASSED: at least 3 symbols found in the same direction -> {dominant}"
+            f"Consensus PASSED: at least {CONSENSUS_MIN} symbols found in the same direction -> {dominant}"
         )
     else:
         print_yellow(
-            "Consensus FAILED: fewer than 3 NQ/ES/YM-family signals are aligned "
+            f"Consensus FAILED: fewer than {CONSENSUS_MIN} NQ/ES/YM-family signals are aligned "
             "in the same direction. No MNQ trade will be sent."
         )
 
@@ -449,11 +473,13 @@ def main() -> None:
     print_green(f"Product: {best_row.product}")
     print_green(f"Current position: {best_row.current_position}")
     print_green(f"Nearest order: {best_row.nearest_order}")
-    print_green(f"Parsed target side/qty: {desired_pos.side if desired_pos else 'N/A'} "
-                f"{desired_pos.qty if desired_pos else ''}")
+    print_green(
+        f"Parsed target side/qty: {desired_pos.side if desired_pos else 'N/A'} "
+        f"{desired_pos.qty if desired_pos else ''}"
+    )
 
     # Early exit conditions
-    if consensus["max_same_direction"] < 3:
+    if consensus["max_same_direction"] < CONSENSUS_MIN:
         log_event(
             {
                 "timestamp_utc": now,
@@ -471,7 +497,7 @@ def main() -> None:
                 "fill_price": "",
                 "payload_json": "",
                 "response_json": "",
-                "note": "3-symbol same-direction consensus not satisfied",
+                "note": f"{CONSENSUS_MIN}-symbol same-direction consensus not satisfied",
             }
         )
         print_yellow("MT5 TRADE DECISION: DO NOT SEND ORDER (consensus condition failed).")
@@ -611,7 +637,7 @@ def main() -> None:
             "fill_price": fill_price,
             "payload_json": json.dumps(payload, ensure_ascii=False),
             "response_json": json.dumps(result, ensure_ascii=False),
-            "note": "Order submitted from scraped top-ranked NQ strategy after 3-symbol consensus",
+            "note": f"Order submitted from scraped top-ranked NQ strategy after {CONSENSUS_MIN}-symbol consensus",
         }
     )
 

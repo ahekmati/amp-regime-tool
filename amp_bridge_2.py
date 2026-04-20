@@ -35,6 +35,8 @@ RANK_FALLBACK_MAX = int(os.getenv("RANK_FALLBACK_MAX", "10"))
 
 DEBUG_DIR = Path(os.getenv("DEBUG_DIR", "./amp_debug"))
 SAVE_DEBUG = os.getenv("SAVE_DEBUG", "1").strip().lower() in ("1", "true", "yes", "y")
+ALLOW_FLAT_SIGNAL = os.getenv("ALLOW_FLAT_SIGNAL", "1").strip().lower() in ("1", "true", "yes", "y")
+CONSENSUS_MIN = int(os.getenv("CONSENSUS_MIN", "3"))
 
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -43,39 +45,51 @@ CYAN = "\033[96m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
 
 def green(msg: str) -> None:
     print(f"{GREEN}{msg}{RESET}")
 
+
 def green_bold(msg: str) -> None:
     print(f"{GREEN}{BOLD}{msg}{RESET}")
+
 
 def yellow(msg: str) -> None:
     print(f"{YELLOW}{msg}{RESET}")
 
+
 def red(msg: str) -> None:
     print(f"{RED}{msg}{RESET}")
+
 
 def cyan(msg: str) -> None:
     print(f"{CYAN}{msg}{RESET}")
 
+
 def normalize_text(x: str) -> str:
     return re.sub(r"\s+", " ", (x or "").strip())
+
 
 def money_to_float(s: str) -> Optional[float]:
     if s is None:
         return None
     s = s.replace("$", "").replace(",", "").strip()
+    if s.startswith("(") and s.endswith(")"):
+        s = f"-{s[1:-1]}"
     try:
         return float(s)
     except Exception:
         return None
 
+
 def stable_row_id(system: str, product: str, developer: str) -> str:
     base = f"{normalize_text(system)}|{normalize_text(product)}|{normalize_text(developer)}"
     return hashlib.sha1(base.encode("utf-8")).hexdigest()[:16]
+
 
 def fetch_html() -> str:
     headers = {"User-Agent": USER_AGENT}
@@ -83,11 +97,13 @@ def fetch_html() -> str:
     r.raise_for_status()
     return r.text
 
+
 def debug_write(name: str, content: str) -> None:
     if not SAVE_DEBUG:
         return
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     (DEBUG_DIR / name).write_text(content, encoding="utf-8")
+
 
 def parse_current_session(html: str) -> List[Dict]:
     soup = BeautifulSoup(html, "html.parser")
@@ -154,45 +170,63 @@ def parse_current_session(html: str) -> List[Dict]:
     debug_write("debug_parse_rows.txt", "\n".join(debug_lines))
     return rows
 
+
 def product_root(product: str, system: str = "") -> Optional[str]:
     p = normalize_text(product).upper()
     s = normalize_text(system).upper()
-    combined = f"{p} | {s}"
 
-    if "MICRO" in combined and "NASDAQ" in combined:
-        return "MNQ"
-    if "E-MINI" in combined and "NASDAQ" in combined:
-        return "NQ"
+    exact_map = {
+        "NQ": "NQ",
+        "MNQ": "MNQ",
+        "ES": "ES",
+        "MES": "MES",
+        "YM": "YM",
+        "MYM": "MYM",
+        "RTY": "RTY",
+        "M2K": "M2K",
+    }
+    if p in exact_map:
+        return exact_map[p]
 
-    for root in ("MNQ", "NQ", "MES", "ES", "MYM", "YM"):
-        if root in p or root in s:
+    combined = f"{p} {s}"
+
+    patterns = [
+        (r"\bMICRO\s+NASDAQ\b", "MNQ"),
+        (r"\bE-?MINI\s+NASDAQ\b", "NQ"),
+        (r"\bNASDAQ\b", "NQ"),
+        (r"\bMICRO\s+E-?MINI\s+S&P\b", "MES"),
+        (r"\bE-?MINI\s+S&P\b", "ES"),
+        (r"\bS&P\s*500\b", "ES"),
+        (r"\bMICRO\s+DOW\s*JONES\b", "MYM"),
+        (r"\bDOW\s*JONES\b", "YM"),
+        (r"\bRUSSELL\s*2000\b", "RTY"),
+    ]
+    for pattern, root in patterns:
+        if re.search(pattern, combined):
             return root
 
-    if "NASDAQ" in combined:
-        return "NQ"
     return None
+
 
 def parse_position_text(pos: str) -> str:
     p = normalize_text(pos).upper()
 
     if not p:
         return "unknown"
-
     if any(x in p for x in ["LONG", "BUY"]):
         return "long"
     if any(x in p for x in ["SHORT", "SELL"]):
         return "short"
     if any(x in p for x in ["FLAT", "NONE", "EXIT", "CLOSE", "NO POSITION", "SQUARE"]):
         return "flat"
-
     if re.search(r"(^|[\s(])L(?:ONG)?([\s@0-9]|$)", p):
         return "long"
     if re.search(r"(^|[\s(])S(?:HORT)?([\s@0-9]|$)", p):
         return "short"
-
     return "unknown"
 
-def count_directional_consensus(rows: List[Dict]) -> Dict[str, int]:
+
+def count_directional_consensus(rows: List[Dict]) -> Dict[str, object]:
     long_count = 0
     short_count = 0
     qualifying_rows = []
@@ -201,17 +235,14 @@ def count_directional_consensus(rows: List[Dict]) -> Dict[str, int]:
         root = product_root(r["product"], r["system"])
         pos = parse_position_text(r["current_position"])
 
-        if root in ("NQ", "MNQ", "ES", "MES", "YM", "MYM"):
+        if root in ("NQ", "MNQ", "ES", "MES", "YM", "MYM") and pos in ("long", "short"):
             if pos == "long":
                 long_count += 1
-                qualifying_rows.append(
-                    f"rank #{r['rank']} | {root} | LONG | {r['system']}"
-                )
-            elif pos == "short":
+            else:
                 short_count += 1
-                qualifying_rows.append(
-                    f"rank #{r['rank']} | {root} | SHORT | {r['system']}"
-                )
+            qualifying_rows.append(
+                f"rank #{r['rank']} | {root} | {pos.upper()} | {r['system']} | product={r['product']}"
+            )
 
     return {
         "long_count": long_count,
@@ -220,6 +251,7 @@ def count_directional_consensus(rows: List[Dict]) -> Dict[str, int]:
         "qualifying_count": long_count + short_count,
         "qualifying_rows": qualifying_rows,
     }
+
 
 def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
     debug_lines = [f"total rows={len(rows)}"]
@@ -231,11 +263,10 @@ def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
         f"max_same_direction={consensus['max_same_direction']}"
     )
 
-    if consensus["max_same_direction"] < 3:
+    if consensus["max_same_direction"] < CONSENSUS_MIN:
         debug_lines.append(
-            "Consensus condition FAILED: need at least 3 NQ/ES/YM strategies "
-            "all in the same direction (all long or all short). "
-            "No NQ leader will be selected."
+            f"Consensus condition FAILED: need at least {CONSENSUS_MIN} NQ/ES/YM strategies "
+            "all in the same direction (all long or all short). No NQ leader will be selected."
         )
         debug_write("debug_choose_nq_leader.txt", "\n".join(debug_lines))
         return None
@@ -255,6 +286,7 @@ def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
     debug_lines.append(f"nq_rows={len(nq_rows)} rank_fallback_max={RANK_FALLBACK_MAX}")
 
     max_rank_to_consider = max(1, RANK_FALLBACK_MAX)
+    allowed_targets = ("long", "short", "flat") if ALLOW_FLAT_SIGNAL else ("long", "short")
 
     for r in nq_rows:
         target = parse_position_text(r["current_position"])
@@ -264,7 +296,7 @@ def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
         debug_lines.append(
             f"consider rank={r['rank']} product={r['product']} pos={r['current_position']} target={target}"
         )
-        if target in ("long", "short", "flat"):
+        if target in allowed_targets:
             debug_lines.append(f"SELECTED row_id={r['row_id']} rank={r['rank']} target={target}")
             debug_write("debug_choose_nq_leader.txt", "\n".join(debug_lines))
             return r
@@ -272,6 +304,7 @@ def choose_nq_leader(rows: List[Dict]) -> Optional[Dict]:
     debug_lines.append("no valid NQ candidate found")
     debug_write("debug_choose_nq_leader.txt", "\n".join(debug_lines))
     return None
+
 
 def get_top_nq_rows(rows: List[Dict], n: int = 3) -> List[Dict]:
     nq_rows = []
@@ -282,6 +315,7 @@ def get_top_nq_rows(rows: List[Dict], n: int = 3) -> List[Dict]:
     nq_rows.sort(key=lambda x: x["rank"])
     return nq_rows[:n]
 
+
 def target_to_action(target: Optional[str]) -> Optional[str]:
     if target == "long":
         return "BUY"
@@ -290,6 +324,7 @@ def target_to_action(target: Optional[str]) -> Optional[str]:
     if target == "flat":
         return "FLAT"
     return None
+
 
 def build_payload(row: Optional[Dict], error: Optional[str] = None) -> Dict:
     ts = now_utc()
@@ -339,11 +374,13 @@ def build_payload(row: Optional[Dict], error: Optional[str] = None) -> Dict:
 
     return payload
 
+
 def write_signal(payload: Dict) -> None:
     SIGNAL_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = SIGNAL_FILE.with_suffix(SIGNAL_FILE.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(SIGNAL_FILE)
+
 
 def main() -> None:
     rows: List[Dict] = []
@@ -359,7 +396,10 @@ def main() -> None:
     started_at = now_utc()
     green_bold(f"=== AMP NQ BRIDGE START {started_at.isoformat()} ===")
     cyan(f"AMP_URL={AMP_URL}")
-    cyan(f"TOP_N={TOP_N} | RANK_FALLBACK_MAX={RANK_FALLBACK_MAX} | MT5_SYMBOL_NQ={MT5_SYMBOL_NQ}")
+    cyan(
+        f"TOP_N={TOP_N} | RANK_FALLBACK_MAX={RANK_FALLBACK_MAX} | "
+        f"CONSENSUS_MIN={CONSENSUS_MIN} | ALLOW_FLAT_SIGNAL={ALLOW_FLAT_SIGNAL} | MT5_SYMBOL_NQ={MT5_SYMBOL_NQ}"
+    )
 
     try:
         green("Fetching AMP current session page...")
@@ -399,14 +439,14 @@ def main() -> None:
         else:
             yellow("No qualifying NQ/ES/YM rows with long/short direction were found.")
 
-        if consensus_info["max_same_direction"] >= 3:
-            dominant = "LONG" if consensus_info["long_count"] >= 3 else "SHORT"
+        if consensus_info["max_same_direction"] >= CONSENSUS_MIN:
+            dominant = "LONG" if consensus_info["long_count"] >= CONSENSUS_MIN else "SHORT"
             green_bold(
-                f"Consensus PASSED: at least 3 symbols found in the same direction -> {dominant}"
+                f"Consensus PASSED: at least {CONSENSUS_MIN} symbols found in the same direction -> {dominant}"
             )
         else:
             yellow(
-                "Consensus FAILED: fewer than 3 NQ/ES/YM-family signals are aligned "
+                f"Consensus FAILED: fewer than {CONSENSUS_MIN} NQ/ES/YM-family signals are aligned "
                 "in the same direction."
             )
 
@@ -464,15 +504,22 @@ def main() -> None:
     )
 
     if s["master_found"] and s["action"]:
-        green_bold("MT5 TRADE DECISION: SEND ORDER")
-        green(
-            f"Sending order to MT5: symbol={s['symbol']} action={s['action']} "
-            f"volume={s['volume']} sl_points={s['sl_points']} tp_points={s['tp_points']}"
-        )
-        green(
-            f"Source strategy: system='{s['system']}' rank={s['rank']} "
-            f"current_position='{s['current_position_raw']}'"
-        )
+        if s["action"] == "FLAT":
+            green_bold("MT5 TRADE DECISION: SEND FLATTEN/CLOSE COMMAND")
+            green(
+                f"Sending FLAT command to MT5: symbol={s['symbol']} volume={s['volume']} "
+                f"source_system='{s['system']}' rank={s['rank']}"
+            )
+        else:
+            green_bold("MT5 TRADE DECISION: SEND ORDER")
+            green(
+                f"Sending order to MT5: symbol={s['symbol']} action={s['action']} "
+                f"volume={s['volume']} sl_points={s['sl_points']} tp_points={s['tp_points']}"
+            )
+            green(
+                f"Source strategy: system='{s['system']}' rank={s['rank']} "
+                f"current_position='{s['current_position_raw']}'"
+            )
     else:
         yellow("MT5 TRADE DECISION: DO NOT SEND ORDER")
         yellow(
@@ -484,6 +531,7 @@ def main() -> None:
         f"FINAL SUMMARY -> send_trade={bool(s['master_found'] and s['action'])} "
         f"| target={s['target']} | action={s['action']} | rank={s['rank']}"
     )
+
 
 if __name__ == "__main__":
     main()
