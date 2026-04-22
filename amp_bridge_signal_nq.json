@@ -1,23 +1,23 @@
 {
-  "generated_at_utc": "2026-04-20T13:54:19.095889+00:00",
+  "generated_at_utc": "2026-04-22T18:51:19.227588+00:00",
   "source": "AMP TopStrategies",
   "mode": "NQ-only top-ranked selector",
   "error": null,
   "signal": {
-    "generated_at_utc": 1776693259,
+    "generated_at_utc": 1776883879,
     "symbol": "MNQM26",
-    "master_found": false,
-    "target": null,
-    "action": null,
+    "master_found": true,
+    "target": "long",
+    "action": "BUY",
     "volume": 1.0,
     "sl_points": 200.0,
     "tp_points": 2200.0,
-    "system": null,
-    "product": null,
-    "rank": null,
-    "current_position_raw": null,
-    "nearest_order": null,
-    "row_id": null,
-    "message": "No valid NQ/MNQ candidate found in allowed ranks; do nothing"
+    "system": "DT Rider M1C NQ v5",
+    "product": "NQ",
+    "rank": 1,
+    "current_position_raw": "Long 1 @ 26823.25",
+    "nearest_order": "Sell LMT 1 @ 27135.75",
+    "row_id": "4dcb20eaee417346",
+    "message": "Selected top-ranked NQ candidate rank 1"
   }
 }

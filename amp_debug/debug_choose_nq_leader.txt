@@ -1,3 +1,3 @@
 total rows=10
-consensus_long_count_NQ_ES_YM=0 consensus_short_count_NQ_ES_YM=0 max_same_direction=0
+consensus_long_count_NQ_ES_YM=2 consensus_short_count_NQ_ES_YM=0 max_same_direction=2
 Consensus condition FAILED: need at least 3 NQ/ES/YM strategies all in the same direction (all long or all short). No NQ leader will be selected.

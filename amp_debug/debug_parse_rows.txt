@@ -1,20 +1,20 @@
-ROW 1: #1 FASSONERIA 4.0 NQ KORIAL SYSTEMS $993.33 Flat --
-ROW 1: parsed -> {"row_id": "6b77d2cddd91a74a", "rank": 1, "system": "FASSONERIA 4.0", "product": "NQ", "developer": "KORIAL SYSTEMS", "pnl": 993.33, "current_position": "Flat", "nearest_order": "--"}
-ROW 2: #2 Position Trad Cont v.5.2 _ Live Cattle LE LE AutoTradingBot $440.00 Long 1 @ 244.80 Sell STP 1 @ 243.05
-ROW 2: parsed -> {"row_id": "5efb236c16f2b2bb", "rank": 2, "system": "Position Trad Cont v.5.2 _ Live Cattle LE", "product": "LE", "developer": "AutoTradingBot", "pnl": 440.0, "current_position": "Long 1 @ 244.80", "nearest_order": "Sell STP 1 @ 243.05"}
-ROW 3: #3 Ackbar Kgor SwissFranc Medses SF ILernet Trading Systems $175.00 Long 1 @ 1.2844 Sell STP 1 @ 1.2763
-ROW 3: parsed -> {"row_id": "291d7e1c4629fcf8", "rank": 3, "system": "Ackbar Kgor SwissFranc Medses", "product": "SF", "developer": "ILernet Trading Systems", "pnl": 175.0, "current_position": "Long 1 @ 1.2844", "nearest_order": "Sell STP 1 @ 1.2763"}
-ROW 4: #4 Sucellus E-mini DowJones 5' YM 0MG SYST3MS $50.00 Flat --
-ROW 4: parsed -> {"row_id": "40c35bca9c30d6a9", "rank": 4, "system": "Sucellus E-mini DowJones 5'", "product": "YM", "developer": "0MG SYST3MS", "pnl": 50.0, "current_position": "Flat", "nearest_order": "--"}
-ROW 5: #5 Watto Corn 3Loops ZC ILernet Trading Systems ($37.50) Short 1 @ 470 Buy STP 1 @ 478.75
-ROW 5: parsed -> {"row_id": "ec106baa83c420ea", "rank": 5, "system": "Watto Corn 3Loops", "product": "ZC", "developer": "ILernet Trading Systems", "pnl": -37.5, "current_position": "Short 1 @ 470", "nearest_order": "Buy STP 1 @ 478.75"}
-ROW 6: #6 CONES BRITISH YM LUDOVIC BP CirusTrading ($37.50) Long 1 @ 1.3531 --
-ROW 6: parsed -> {"row_id": "ced97469e0ffca29", "rank": 6, "system": "CONES BRITISH YM LUDOVIC", "product": "BP", "developer": "CirusTrading", "pnl": -37.5, "current_position": "Long 1 @ 1.3531", "nearest_order": "--"}
-ROW 7: #7 CIRUS ST EUROFX NEBULA URO CirusTrading ($75.00) Long 1 @ 1.1826 --
-ROW 7: parsed -> {"row_id": "2c8c22117100f8f2", "rank": 7, "system": "CIRUS ST EUROFX NEBULA", "product": "URO", "developer": "CirusTrading", "pnl": -75.0, "current_position": "Long 1 @ 1.1826", "nearest_order": "--"}
-ROW 8: #8 CIRUS EURFX ST13 ROGY URO CirusTrading ($75.00) Long 1 @ 1.1560 --
-ROW 8: parsed -> {"row_id": "4a25a57409ea6391", "rank": 8, "system": "CIRUS EURFX ST13 ROGY", "product": "URO", "developer": "CirusTrading", "pnl": -75.0, "current_position": "Long 1 @ 1.1560", "nearest_order": "--"}
-ROW 9: #9 CONES TNOTE SWISS 90 90 ZN CirusTrading ($93.75) Long 1 @ 111.29690 --
-ROW 9: parsed -> {"row_id": "f976c1609f4ee87c", "rank": 9, "system": "CONES TNOTE SWISS 90 90", "product": "ZN", "developer": "CirusTrading", "pnl": -93.75, "current_position": "Long 1 @ 111.29690", "nearest_order": "--"}
-ROW 10: #10 Watto Kgor Wheat Medses ZW ILernet Trading Systems ($150.00) Short 1 @ 637.75 Buy LMT 1 @ 560.50
-ROW 10: parsed -> {"row_id": "94a55f22903f34e7", "rank": 10, "system": "Watto Kgor Wheat Medses", "product": "ZW", "developer": "ILernet Trading Systems", "pnl": -150.0, "current_position": "Short 1 @ 637.75", "nearest_order": "Buy LMT 1 @ 560.50"}
+ROW 1: #1 DT Rider M1C NQ v5 NQ Crystal Anchor $3,402.50 Long 1 @ 26823.25 Sell LMT 1 @ 27135.75
+ROW 1: parsed -> {"row_id": "4dcb20eaee417346", "rank": 1, "system": "DT Rider M1C NQ v5", "product": "NQ", "developer": "Crystal Anchor", "pnl": 3402.5, "current_position": "Long 1 @ 26823.25", "nearest_order": "Sell LMT 1 @ 27135.75"}
+ROW 2: #2 DEL PONTE TRENTO NQ KORIAL SYSTEMS $2,520.00 Flat --
+ROW 2: parsed -> {"row_id": "f9d77bcee833b9db", "rank": 2, "system": "DEL PONTE TRENTO", "product": "NQ", "developer": "KORIAL SYSTEMS", "pnl": 2520.0, "current_position": "Flat", "nearest_order": "--"}
+ROW 3: #3 BOSTON NASDAQ B NQ TodoBolsa $1,690.00 Flat --
+ROW 3: parsed -> {"row_id": "f784b918486c2c43", "rank": 3, "system": "BOSTON NASDAQ B", "product": "NQ", "developer": "TodoBolsa", "pnl": 1690.0, "current_position": "Flat", "nearest_order": "--"}
+ROW 4: #4 DT Rider M1C NQ v3 NQ Crystal Anchor $910.83 Long 1 @ 26946 Sell STP 1 @ 26953.50
+ROW 4: parsed -> {"row_id": "2755b7ee8188bc9e", "rank": 4, "system": "DT Rider M1C NQ v3", "product": "NQ", "developer": "Crystal Anchor", "pnl": 910.83, "current_position": "Long 1 @ 26946", "nearest_order": "Sell STP 1 @ 26953.50"}
+ROW 5: #5 FASSONERIA 4.0 NQ KORIAL SYSTEMS $748.00 Flat --
+ROW 5: parsed -> {"row_id": "6b77d2cddd91a74a", "rank": 5, "system": "FASSONERIA 4.0", "product": "NQ", "developer": "KORIAL SYSTEMS", "pnl": 748.0, "current_position": "Flat", "nearest_order": "--"}
+ROW 6: #6 DEL PONTE RECCO NQ 3.0 NQ KORIAL SYSTEMS $737.50 Flat --
+ROW 6: parsed -> {"row_id": "39168b43411840d7", "rank": 6, "system": "DEL PONTE RECCO NQ 3.0", "product": "NQ", "developer": "KORIAL SYSTEMS", "pnl": 737.5, "current_position": "Flat", "nearest_order": "--"}
+ROW 7: #7 DEL PONTE RECCO NQ 2.0 NQ KORIAL SYSTEMS $714.29 Flat --
+ROW 7: parsed -> {"row_id": "fd047513765944fc", "rank": 7, "system": "DEL PONTE RECCO NQ 2.0", "product": "NQ", "developer": "KORIAL SYSTEMS", "pnl": 714.29, "current_position": "Flat", "nearest_order": "--"}
+ROW 8: #8 Forest Eurostoxx-50 Maredu %pct T.profit & SL FESX Forest Trading $445.85 Flat --
+ROW 8: parsed -> {"row_id": "a272c2dd60532de5", "rank": 8, "system": "Forest Eurostoxx-50 Maredu %pct T.profit & SL", "product": "FESX", "developer": "Forest Trading", "pnl": 445.85, "current_position": "Flat", "nearest_order": "--"}
+ROW 9: #9 NEO DELTA LONG GOLD V1 GC Victor Semenchuk $367.51 Long 1 @ 4756.3 Sell STP 1 @ 4694.5
+ROW 9: parsed -> {"row_id": "245dce011513c352", "rank": 9, "system": "NEO DELTA LONG GOLD V1", "product": "GC", "developer": "Victor Semenchuk", "pnl": 367.51, "current_position": "Long 1 @ 4756.3", "nearest_order": "Sell STP 1 @ 4694.5"}
+ROW 10: #10 Watto Kgor Wheat Medses ZW ILernet Trading Systems $300.00 Short 1 @ 637.75 Buy LMT 1 @ 560.50
+ROW 10: parsed -> {"row_id": "94a55f22903f34e7", "rank": 10, "system": "Watto Kgor Wheat Medses", "product": "ZW", "developer": "ILernet Trading Systems", "pnl": 300.0, "current_position": "Short 1 @ 637.75", "nearest_order": "Buy LMT 1 @ 560.50"}
