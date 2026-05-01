@@ -1,3 +1,15 @@
 total rows=10
-consensus_long_count_NQ_ES_YM=2 consensus_short_count_NQ_ES_YM=0 max_same_direction=2
-Consensus condition FAILED: need at least 3 NQ/ES/YM strategies all in the same direction (all long or all short). No NQ leader will be selected.
+consensus_long_count_NQ_ES_YM=6 consensus_short_count_NQ_ES_YM=0 max_same_direction=6
+candidate_check rank=1 product=CL system=Kepler Crude Oil 5' root=None pos=Flat target=flat
+candidate_check rank=2 product=ES system=ALGOsigmaX E-mini S&P ES root=ES pos=Long 1 @ 7143.25 target=long
+candidate_check rank=3 product=NQ system=FASSONERIA 3.0 root=NQ pos=Long 1 @ 27094.50 target=long
+candidate_check rank=4 product=NQ system=DEL PONTE RECCO NQ 3.0 root=NQ pos=Long 1 @ 27094.50 target=long
+candidate_check rank=5 product=NQ system=FASSONERIA 4.0 root=NQ pos=Long 1 @ 27094.50 target=long
+candidate_check rank=6 product=NQ system=DEL PONTE RECCO NQ 2.0 root=NQ pos=Long 1 @ 27094.50 target=long
+candidate_check rank=7 product=NQ system=BOSTON NASDAQ B root=NQ pos=Long 1 @ 27106.75 target=long
+candidate_check rank=8 product=LE system=Ackbar LiveCattle StrikeForce ELongses root=None pos=Short 1 @ 245.75 target=short
+candidate_check rank=9 product=SF system=Ackbar Kgor SwissFranc Medses root=None pos=Long 1 @ 1.2844 target=long
+candidate_check rank=10 product=ZC system=Watto Corn 3Loops root=None pos=Short 1 @ 470 target=short
+nq_rows=5 rank_fallback_max=10
+consider rank=3 product=NQ pos=Long 1 @ 27094.50 target=long
+SELECTED row_id=63741ca1cd626891 rank=3 target=long

@@ -1,23 +1,23 @@
 {
-  "generated_at_utc": "2026-04-22T19:05:41.572616+00:00",
+  "generated_at_utc": "2026-04-23T15:11:35.581869+00:00",
   "source": "AMP TopStrategies",
   "mode": "NQ-only top-ranked selector",
   "error": null,
   "signal": {
-    "generated_at_utc": 1776884741,
+    "generated_at_utc": 1776957095,
     "symbol": "MNQM26",
-    "master_found": false,
-    "target": null,
-    "action": null,
+    "master_found": true,
+    "target": "long",
+    "action": "BUY",
     "volume": 1.0,
     "sl_points": 200.0,
     "tp_points": 2200.0,
-    "system": null,
-    "product": null,
-    "rank": null,
-    "current_position_raw": null,
-    "nearest_order": null,
-    "row_id": null,
-    "message": "No valid NQ/MNQ candidate found in allowed ranks; do nothing"
+    "system": "FASSONERIA 3.0",
+    "product": "NQ",
+    "rank": 3,
+    "current_position_raw": "Long 1 @ 27094.50",
+    "nearest_order": "Sell STP 1 @ 26994.50",
+    "row_id": "63741ca1cd626891",
+    "message": "Selected top-ranked NQ candidate rank 3"
   }
 }

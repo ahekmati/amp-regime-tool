@@ -1,43 +1,43 @@
 [
   {
-    "row_id": "4dcb20eaee417346",
+    "row_id": "7bda8dff5567e340",
     "rank": 1,
-    "system": "DT Rider M1C NQ v5",
-    "product": "NQ",
-    "developer": "Crystal Anchor",
-    "pnl": 3402.5,
-    "current_position": "Long 1 @ 26823.25",
-    "nearest_order": "Sell LMT 1 @ 27135.75"
+    "system": "Kepler Crude Oil 5'",
+    "product": "CL",
+    "developer": "0MG SYST3MS",
+    "pnl": 1428.33,
+    "current_position": "Flat",
+    "nearest_order": "--"
   },
   {
-    "row_id": "f9d77bcee833b9db",
+    "row_id": "3515a5a61463c0d0",
     "rank": 2,
-    "system": "DEL PONTE TRENTO",
+    "system": "ALGOsigmaX E-mini S&P ES",
+    "product": "ES",
+    "developer": "Victor Semenchuk",
+    "pnl": 832.5,
+    "current_position": "Long 1 @ 7143.25",
+    "nearest_order": "Sell STP 1 @ 7064.75"
+  },
+  {
+    "row_id": "63741ca1cd626891",
+    "rank": 3,
+    "system": "FASSONERIA 3.0",
     "product": "NQ",
     "developer": "KORIAL SYSTEMS",
-    "pnl": 2520.0,
-    "current_position": "Flat",
-    "nearest_order": "--"
+    "pnl": 467.5,
+    "current_position": "Long 1 @ 27094.50",
+    "nearest_order": "Sell STP 1 @ 26994.50"
   },
   {
-    "row_id": "f784b918486c2c43",
-    "rank": 3,
-    "system": "BOSTON NASDAQ B",
-    "product": "NQ",
-    "developer": "TodoBolsa",
-    "pnl": 1690.0,
-    "current_position": "Flat",
-    "nearest_order": "--"
-  },
-  {
-    "row_id": "2755b7ee8188bc9e",
+    "row_id": "39168b43411840d7",
     "rank": 4,
-    "system": "DT Rider M1C NQ v3",
+    "system": "DEL PONTE RECCO NQ 3.0",
     "product": "NQ",
-    "developer": "Crystal Anchor",
-    "pnl": 910.83,
-    "current_position": "Long 1 @ 26946",
-    "nearest_order": "Sell STP 1 @ 26953.50"
+    "developer": "KORIAL SYSTEMS",
+    "pnl": 467.5,
+    "current_position": "Long 1 @ 27094.50",
+    "nearest_order": "Sell STP 1 @ 26961.25"
   },
   {
     "row_id": "6b77d2cddd91a74a",
@@ -45,58 +45,58 @@
     "system": "FASSONERIA 4.0",
     "product": "NQ",
     "developer": "KORIAL SYSTEMS",
-    "pnl": 748.0,
-    "current_position": "Flat",
-    "nearest_order": "--"
-  },
-  {
-    "row_id": "39168b43411840d7",
-    "rank": 6,
-    "system": "DEL PONTE RECCO NQ 3.0",
-    "product": "NQ",
-    "developer": "KORIAL SYSTEMS",
-    "pnl": 737.5,
-    "current_position": "Flat",
-    "nearest_order": "--"
+    "pnl": 440.5,
+    "current_position": "Long 1 @ 27094.50",
+    "nearest_order": "Sell STP 1 @ 26994.50"
   },
   {
     "row_id": "fd047513765944fc",
-    "rank": 7,
+    "rank": 6,
     "system": "DEL PONTE RECCO NQ 2.0",
     "product": "NQ",
     "developer": "KORIAL SYSTEMS",
-    "pnl": 714.29,
-    "current_position": "Flat",
-    "nearest_order": "--"
+    "pnl": 435.83,
+    "current_position": "Long 1 @ 27094.50",
+    "nearest_order": "Sell STP 1 @ 27044.50"
   },
   {
-    "row_id": "a272c2dd60532de5",
+    "row_id": "f784b918486c2c43",
+    "rank": 7,
+    "system": "BOSTON NASDAQ B",
+    "product": "NQ",
+    "developer": "TodoBolsa",
+    "pnl": 307.5,
+    "current_position": "Long 1 @ 27106.75",
+    "nearest_order": "Sell STP 1 @ 27064.75"
+  },
+  {
+    "row_id": "29621ddb0b2d27cd",
     "rank": 8,
-    "system": "Forest Eurostoxx-50 Maredu %pct T.profit & SL",
-    "product": "FESX",
-    "developer": "Forest Trading",
-    "pnl": 445.85,
-    "current_position": "Flat",
-    "nearest_order": "--"
-  },
-  {
-    "row_id": "245dce011513c352",
-    "rank": 9,
-    "system": "NEO DELTA LONG GOLD V1",
-    "product": "GC",
-    "developer": "Victor Semenchuk",
-    "pnl": 367.51,
-    "current_position": "Long 1 @ 4756.3",
-    "nearest_order": "Sell STP 1 @ 4694.5"
-  },
-  {
-    "row_id": "94a55f22903f34e7",
-    "rank": 10,
-    "system": "Watto Kgor Wheat Medses",
-    "product": "ZW",
+    "system": "Ackbar LiveCattle StrikeForce ELongses",
+    "product": "LE",
     "developer": "ILernet Trading Systems",
-    "pnl": 300.0,
-    "current_position": "Short 1 @ 637.75",
-    "nearest_order": "Buy LMT 1 @ 560.50"
+    "pnl": 110.0,
+    "current_position": "Short 1 @ 245.75",
+    "nearest_order": "Buy STP 1 @ 249.13"
+  },
+  {
+    "row_id": "291d7e1c4629fcf8",
+    "rank": 9,
+    "system": "Ackbar Kgor SwissFranc Medses",
+    "product": "SF",
+    "developer": "ILernet Trading Systems",
+    "pnl": 25.0,
+    "current_position": "Long 1 @ 1.2844",
+    "nearest_order": "Sell STP 1 @ 1.2711"
+  },
+  {
+    "row_id": "ec106baa83c420ea",
+    "rank": 10,
+    "system": "Watto Corn 3Loops",
+    "product": "ZC",
+    "developer": "ILernet Trading Systems",
+    "pnl": 12.5,
+    "current_position": "Short 1 @ 470",
+    "nearest_order": "Buy STP 1 @ 478.75"
   }
 ]
