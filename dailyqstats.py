@@ -62,7 +62,6 @@ def download_data(ticker=TICKER, start=START_DATE):
         auto_adjust=False,
         progress=False
     )
-
     if df.empty:
         raise ValueError("No data downloaded.")
 
@@ -666,7 +665,6 @@ def get_today_weekday_summary(df, wd_long, wd_12m):
 
     return weekday_name, long_msg, short_msg
 
-
 def print_today_weekday_behavior_block(weekday_name, long_msg, short_msg):
     print_header(f"{weekday_name.upper()} HISTORICAL BEHAVIOR (FOCUS)")
     print(long_msg)
@@ -674,6 +672,135 @@ def print_today_weekday_behavior_block(weekday_name, long_msg, short_msg):
     print(
         "\nInterpretation: this tells you if today's weekday has historically "
         "been slightly bullish or bearish intraday and overnight, both long-term and in the last year."
+    )
+
+
+# =========================
+# SHORT-TERM PREDICTION (NEXT 1–2 DAYS)
+# =========================
+def predict_next_two_days(df, zr):
+    """
+    Use current 20d Z-score vs 20DMA and historical conditional forward returns
+    from the Z-score table to give a simple 1–2 day outlook.
+    """
+    # compute current z-score vs 20dma
+    price = df["Adj Close"]
+    ma20 = price.rolling(20).mean()
+    std20 = price.rolling(20).std()
+    if ma20.isna().iloc[-1] or std20.isna().iloc[-1] or std20.iloc[-1] == 0:
+        return None
+
+    z_now = (price.iloc[-1] - ma20.iloc[-1]) / std20.iloc[-1]
+
+    # pick appropriate bucket for MA=20
+    def pick_bucket(z):
+        if z <= -2:
+            return "z<=-2"
+        elif -2 < z <= -1:
+            return "-2<z<=-1"
+        elif abs(z) < 1:
+            return "|z|<1"
+        elif 1 <= z < 2:
+            return "1<=z<2"
+        else:
+            return "z>=2"
+
+    bucket = pick_bucket(z_now)
+
+    # extract historical stats from zr for this bucket and MA=20
+    row_1d = zr[(zr["ma"] == 20) & (zr["fwd_days"] == 1) & (zr["bucket"] == bucket)]
+    row_2d = zr[(zr["ma"] == 20) & (zr["fwd_days"] == 2) & (zr["bucket"] == bucket)]
+
+    # If there is no 2-day, approximate via 2 * 1-day mean
+    if row_1d.empty:
+        return None
+
+    avg1 = row_1d["avg_fwd_return"].iloc[0]
+    pct_up1 = row_1d["pct_up"].iloc[0]
+    obs1 = row_1d["obs"].iloc[0]
+
+    if not row_2d.empty:
+        avg2 = row_2d["avg_fwd_return"].iloc[0]
+        pct_up2 = row_2d["pct_up"].iloc[0]
+        obs2 = row_2d["obs"].iloc[0]
+    else:
+        avg2 = 2 * avg1
+        pct_up2 = pct_up1  # rough proxy
+        obs2 = obs1
+
+    # determine bias
+    def bias_from(avg, pct_up):
+        if avg > 0 and pct_up > 0.55:
+            return "Up"
+        elif avg < 0 and pct_up < 0.45:
+            return "Down"
+        else:
+            return "Neutral"
+
+    bias1 = bias_from(avg1, pct_up1)
+    bias2 = bias_from(avg2, pct_up2)
+
+    outlook = {
+        "z_now": z_now,
+        "bucket": bucket,
+        "avg1": avg1,
+        "pct_up1": pct_up1,
+        "obs1": obs1,
+        "avg2": avg2,
+        "pct_up2": pct_up2,
+        "obs2": obs2,
+        "bias1": bias1,
+        "bias2": bias2,
+    }
+    return outlook
+
+
+def print_short_term_outlook(outlook):
+    print_header("NEXT 1–2 DAYS OUTLOOK (Z-SCORE CONDITIONAL)")
+
+    if outlook is None:
+        print("Not enough data for short-term conditional outlook.")
+        return
+
+    z_now = outlook["z_now"]
+    bucket = outlook["bucket"]
+    avg1 = outlook["avg1"]
+    pct_up1 = outlook["pct_up1"]
+    avg2 = outlook["avg2"]
+    pct_up2 = outlook["pct_up2"]
+    bias1 = outlook["bias1"]
+    bias2 = outlook["bias2"]
+
+    print(f"Current 20d Z-score vs 20DMA: {fmt_num(z_now, 2)} (bucket {bucket})")
+    print(
+        f"1-day forward (historical, same bucket): "
+        f"avg={fmt_pct(avg1)}, up_prob≈{fmt_pct(pct_up1, 1)} (obs={int(outlook['obs1'])})"
+    )
+    print(
+        f"2-day forward (historical, same bucket): "
+        f"avg≈{fmt_pct(avg2)}, up_prob≈{fmt_pct(pct_up2, 1)} (obs≈{int(outlook['obs2'])})"
+    )
+
+    line1 = f"Next 1 trading day bias: {bias1}"
+    line2 = f"Next 2 trading days bias: {bias2}"
+
+    if bias1 == "Up":
+        print(GREEN + line1 + RESET)
+    elif bias1 == "Down":
+        print(RED + line1 + RESET)
+    else:
+        print(line1)
+
+    if bias2 == "Up":
+        print(GREEN + line2 + RESET)
+    elif bias2 == "Down":
+        print(RED + line2 + RESET)
+    else:
+        print(line2)
+
+    print(
+        "\nNote: This is purely statistical, using how QQQ historically behaved "
+        "over the next 1–2 days when it was similarly overbought/oversold vs its 20DMA."
     )
 
 
@@ -730,9 +857,13 @@ def main():
     print(ac.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     print_header("MEAN REVERSION / TREND BY Z-SCORE")
-    zr = zscore_reversion_stats(df, ma_windows=(20, 50), forward_days=(1, 5, 10), lookback=min(len(df), 252*7))
+    zr = zscore_reversion_stats(df, ma_windows=(20, 50), forward_days=(1, 2, 5, 10), lookback=min(len(df), 252*7))
     zr_show = zr[zr["obs"] >= 20].copy()
     print_df_pct(zr_show, ["avg_fwd_return", "median_fwd_return", "pct_up"])
+
+    # Short-term prediction using Z-score table
+    outlook = predict_next_two_days(df, zr)
+    print_short_term_outlook(outlook)
 
     print_header("HMM REGIME DETECTION")
     hmm_out, hmm_err = hmm_regime_analysis(df)
@@ -788,15 +919,24 @@ def main():
     # High-level colored summary
     print_colored_summary(df, stats_list, hmm_out, vol_latest, wd_6m, zr)
 
-    # FINAL BRIGHT COLORED WEEKDAY SNAPSHOT
+    # FINAL BRIGHT COLORED WEEKDAY SNAPSHOT + SHORT-TERM BIAS
     print("\n" + "=" * 90)
     print(GREEN + BOLD + f"TODAY'S WEEKDAY SNAPSHOT: {weekday_name.upper()}" + RESET)
     print(GREEN + long_msg + RESET)
     print(YELLOW + short_msg + RESET)
+
+    if outlook is not None:
+        line = (
+            f"Short-term bias → 1d: {outlook['bias1']} (avg {fmt_pct(outlook['avg1'])}), "
+            f"2d: {outlook['bias2']} (avg≈{fmt_pct(outlook['avg2'])}), "
+            f"bucket: {outlook['bucket']}, z≈{fmt_num(outlook['z_now'],2)}"
+        )
+        print(GREEN + line + RESET)
+
     print(
         CYAN
-        + "Quick read: green line = full history behavior for this weekday, "
-          "yellow line = last 12 months behavior."
+        + "Quick read: green weekday line = full history; yellow = last 12m; "
+          "extra green line = next 1–2 day statistical bias."
         + RESET
     )
 
